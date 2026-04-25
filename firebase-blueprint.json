@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "Public profile data for the user",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string" },
+        "username": { "type": "string" },
+        "bio": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "language": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["displayName", "language"]
+    },
+    "Post": {
+      "title": "Social Post",
+      "description": "A creative post in the main feed",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "desc": { "type": "string" },
+        "fullWork": { "type": "string" },
+        "tags": { "type": "string" },
+        "music": { "type": "string" },
+        "color": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "likesCount": { "type": "integer" },
+        "commentsCount": { "type": "integer" }
+      },
+      "required": ["authorId", "desc", "fullWork", "createdAt"]
+    },
+    "Moment": {
+      "title": "Gallery Moment",
+      "description": "An AI-generated visual legacy piece",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "title": { "type": "string" },
+        "year": { "type": "string" },
+        "location": { "type": "string" },
+        "type": { "type": "string", "enum": ["video", "photo"] },
+        "mediaURL": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["authorId", "title", "year", "type", "mediaURL", "createdAt"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "A comment on a post or moment",
+      "type": "object",
+      "properties": {
+        "authorId": { "type": "string" },
+        "authorName": { "type": "string" },
+        "text": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "parentCommentId": { "type": "string" }
+      },
+      "required": ["authorId", "text", "createdAt"]
+    },
+    "Reaction": {
+      "title": "Reaction",
+      "description": "An emotional reaction to content",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string", "enum": ["like", "love", "care", "haha", "wow", "sad", "anger"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "type", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/posts/{postId}": {
+      "schema": "Post",
+      "description": "Feed posts"
+    },
+    "/posts/{postId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on posts"
+    },
+    "/posts/{postId}/reactions/{userId}": {
+      "schema": "Reaction",
+      "description": "User reactions to posts"
+    },
+    "/moments/{momentId}": {
+      "schema": "Moment",
+      "description": "Gallery items"
+    },
+    "/moments/{momentId}/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Comments on moments"
+    },
+    "/moments/{momentId}/reactions/{userId}": {
+      "schema": "Reaction",
+      "description": "User reactions to moments"
+    }
+  }
+}
