@@ -122,7 +122,7 @@ export default function Moments({ lang }: { lang: string }) {
   useEffect(() => {
     if (!user) return;
     const unsubscribeFns = moments.map(moment => {
-      const path = `posts/${moment.id}/reactions/${user.uid}`;
+      const path = `posts/${moment.id}/Reaction/${user.uid}`;
       return onSnapshot(doc(db, path), (doc) => {
         if (doc.exists()) {
           setUserReactions(prev => ({ ...prev, [moment.id]: doc.data().type }));
@@ -264,7 +264,7 @@ export default function Moments({ lang }: { lang: string }) {
 
   const handleReaction = async (momentId: string, type: string) => {
     if (!user) return;
-    const reactionDoc = doc(db, `posts/${momentId}/reactions/${user.uid}`);
+    const reactionDoc = doc(db, `posts/${momentId}/Reaction/${user.uid}`);
     const momentRef = doc(db, 'posts', momentId);
     
     const oldType = userReactions[momentId];
@@ -301,7 +301,7 @@ export default function Moments({ lang }: { lang: string }) {
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `posts/${momentId}/reactions/${user.uid}`);
+      handleFirestoreError(error, OperationType.WRITE, `posts/${momentId}/Reaction/${user.uid}`);
     }
     setActiveReactionMenu(null);
   };

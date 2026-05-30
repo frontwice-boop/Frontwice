@@ -86,7 +86,7 @@ export default function MomentBuilder() {
       });
 
       // Add the author's own reaction record so they see they've already "Liked" it (auto-like)
-      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+      await setDoc(doc(db, `posts/${docRef.id}/Reaction/${user.uid}`), {
         userId: user.uid,
         type: 'like',
         createdAt: serverTimestamp()

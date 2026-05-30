@@ -43,6 +43,7 @@ const Create = lazy(() => import('./pages/Create'));
 const Chat = lazy(() => import('./pages/Chat'));
 const Profile = lazy(() => import('./pages/Profile'));
 const Moments = lazy(() => import('./pages/Moments'));
+const PostView = lazy(() => import('./pages/PostView'));
 // const Login = lazy(() => import('./pages/Login'));
 
 const VERIFICATION_LABELS = {
@@ -75,6 +76,7 @@ function AnimatedRoutes({ lang, signOut, setLang }: { lang: string; signOut: () 
             <Route path="/library" element={<Library lang={lang} />} />
             <Route path="/create" element={<Create lang={lang} user={user} setLang={setLang} />} />
             <Route path="/chat" element={<Chat lang={lang} />} />
+            <Route path="/work/:id" element={<PostView lang={lang} />} />
             <Route path="/profile" element={<ErrorBoundary><Profile onLogout={signOut} lang={lang} setLang={setLang} /></ErrorBoundary>} />
             <Route path="/profile/:id" element={<ErrorBoundary><Profile onLogout={signOut} lang={lang} setLang={setLang} /></ErrorBoundary>} />
             <Route path="*" element={<Navigate to="/" replace />} />

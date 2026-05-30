@@ -44,7 +44,7 @@ const DEFAULT_LABELS = {
   langDesc: 'AI will generate all chapter content and tribute expansions in your selected language.',
   coverLabel: 'App Cover Page',
   changeCover: 'Change Cover',
-  uploadCover: 'Upload Cover Photo',
+  uploadCover: 'Import Cover Photo',
   coverDesc: 'Portrait or Landscape',
   chaptersTitle: 'Biography Chapters',
   chapterPlaceholder: 'Chapter Title...',
@@ -321,7 +321,7 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
       });
 
       // Auto-like by author
-      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+      await setDoc(doc(db, `posts/${docRef.id}/Reaction/${user.uid}`), {
         userId: user.uid,
         type: 'like',
         createdAt: serverTimestamp()

@@ -145,7 +145,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
 
   const uploadFile = async (file: File) => {
     if (!user) {
-      showToast('You must be logged in to upload files.', 'error');
+      showToast('You must be logged in to import files.', 'error');
       return;
     }
     
@@ -192,7 +192,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
       );
     } catch (err) {
       console.error(err);
-      showToast('Error initializing file upload.', 'error');
+      showToast('Error initializing file import.', 'error');
     }
   };
 
@@ -281,7 +281,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
       });
 
       // Auto-like for the publishing author
-      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+      await setDoc(doc(db, `posts/${docRef.id}/Reaction/${user.uid}`), {
         userId: user.uid,
         type: 'like',
         createdAt: serverTimestamp()
@@ -296,7 +296,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
       }
 
       setIsPublished(true);
-      showToast('Academic research uploaded and published successfully!', 'success');
+      showToast('Academic research imported and published successfully!', 'success');
       
       // Clear draft states
       clearDraft();
@@ -376,7 +376,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
           <h2 className="text-xl font-serif italic text-white">Academic Submission Workspace</h2>
         </div>
         <p className="text-xs text-gray-400 leading-relaxed max-w-2xl">
-          Publish complete, properly formatted scientific studies, articles, or abstracts to our academic timeline. Type or simple-upload your document manuscript below directly for pristine peer display.
+          Publish complete, properly formatted scientific studies, articles, or abstracts to our academic timeline. Type or simple-import your document manuscript below directly for pristine peer display.
         </p>
       </div>
 
@@ -635,7 +635,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                     {uploadProgress !== null ? (
                       <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
                         <RefreshCcw size={12} className="animate-spin text-cyan-400" />
-                        Uploading ({uploadProgress}%)
+                        Importing ({uploadProgress}%)
                       </div>
                     ) : (
                       <button
@@ -644,11 +644,11 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                         className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:bg-cyan-400 transition-all active:scale-95 cursor-pointer"
                       >
                         <Plus size={16} />
-                        Upload Research
+                        Import Research
                       </button>
                     )}
                     <input
-                      id="manuscript-upload-input"
+                      id="manuscript-import-input"
                       type="file"
                       ref={fileInputRef}
                       onChange={handleFileSelect}
@@ -840,7 +840,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
               {isPublishing ? (
                 <>
                   <RefreshCcw size={16} className="animate-spin text-cyan-500" />
-                  Uploading Manuscript...
+                  Importing Manuscript...
                 </>
               ) : (
                 <>

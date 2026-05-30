@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Trash2, Plus, Check, ChevronDown, X, Info, Camera, UserCircle, Globe, BookOpen, FileText, Upload } from 'lucide-react';
+import { Sparkles, Trash2, Plus, Check, ChevronDown, X, Info, Camera, UserCircle, Globe, BookOpen, FileText, Upload, Share2 } from 'lucide-react';
 import { PROSE_GENRES, DRAMA_GENRES, POETRY_GENRES, LITERARY_DEVICES, RESEARCH_STRUCTURE, REFERENCE_STYLES } from '../../constants';
 import { cn } from '../../lib/utils';
 import { generateCreativeWork, generateResearchChapter } from '../../services/ai';
@@ -79,6 +79,7 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
   const [activeCharIdx, setActiveCharIdx] = useState<number | null>(null);
   const [isPublishing, setIsPublishing] = useState(false);
   const [isPublished, setIsPublished] = useState(false);
+  const [publishedPostId, setPublishedPostId] = useState<string | null>(null);
   const [labels, setLabels] = useState(DEFAULT_LABELS);
   const [isTranslating, setIsTranslating] = useState(false);
 
@@ -147,6 +148,7 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
     setIsLoading(true);
     setResult(null); // Clear previous result
     setIsPublished(false);
+    setPublishedPostId(null);
     try {
       if (activeTab === 'Research') {
         const data = await generateResearchChapter(
@@ -227,6 +229,21 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
     }
   };
 
+  const handleShareLink = () => {
+    if (!publishedPostId) return;
+    const url = `${window.location.origin}/work/${publishedPostId}`;
+    
+    if (navigator.share) {
+      navigator.share({
+        title,
+        url
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(url);
+      showToast('Share link copied to clipboard!', 'success');
+    }
+  };
+
   const handlePublish = async () => {
     if (!result || !user) return;
     setIsPublishing(true);
@@ -278,9 +295,10 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
       }
 
       const docRef = await addDoc(collection(db, 'posts'), postData);
+      setPublishedPostId(docRef.id);
 
       // Add the author's own reaction record so they see they've already "Liked" it (auto-like)
-      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+      await setDoc(doc(db, `posts/${docRef.id}/Reaction/${user.uid}`), {
         userId: user.uid,
         type: 'like',
         createdAt: serverTimestamp()
@@ -766,20 +784,30 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
                    <Check size={20} />
                    {labels.publishedFeed}
                  </motion.div>
-                 <button
-                   onClick={() => {
-                     setIsPublished(false);
-                     setResult(null);
-                     setTitle('');
-                     setPrompt('');
-                     setSelectedGenre(null);
-                     setSelectedDevices([]);
-                     setCharacterImages({});
-                   }}
-                   className="w-full py-4 bg-white/5 border border-white/10 text-gray-400 rounded-[2rem] font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/10 transition-all active:scale-95"
-                 >
-                   New Creation
-                 </button>
+                 <div className="grid grid-cols-2 gap-3">
+                    <button
+                      onClick={handleShareLink}
+                      className="w-full py-4 bg-cyan-500 text-black rounded-[2rem] font-bold text-xs uppercase tracking-[0.2em] hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <Share2 size={16} />
+                      Share
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsPublished(false);
+                        setResult(null);
+                        setTitle('');
+                        setPrompt('');
+                        setSelectedGenre(null);
+                        setSelectedDevices([]);
+                        setCharacterImages({});
+                        setPublishedPostId(null);
+                      }}
+                      className="w-full py-4 bg-white/5 border border-white/10 text-gray-400 rounded-[2rem] font-bold text-xs uppercase tracking-[0.2em] hover:bg-white/10 transition-all active:scale-95"
+                    >
+                      New Creation
+                    </button>
+                 </div>
                </div>
              ) : (
                <button 

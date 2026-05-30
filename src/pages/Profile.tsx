@@ -38,8 +38,8 @@ const DEFAULT_LABELS = {
   followBtn: 'Follow',
   followingActive: 'Following',
   closeArchive: 'Close Archive',
-  uploadingMsg: 'Uploading profile picture...',
-  uploadSuccessMsg: 'Profile picture uploaded successfully.',
+  uploadingMsg: 'Importing profile picture...',
+  uploadSuccessMsg: 'Profile picture imported successfully.',
   deactivateConfirmTitle: 'Deactivate?',
   deactivateConfirmDesc: 'Your account and data will be archived for 30 days before permanent deletion.',
   confirmDeactivationBtn: 'Confirm Deactivation',
@@ -442,14 +442,14 @@ export default function Profile({
                         const file = e.target.files?.[0];
                         if (file) {
                           try {
-                            showToast('Uploading profile picture...', 'info');
+                            showToast('Importing profile picture...', 'info');
                             const { uploadProfilePicture } = await import('../services/storageService');
                             const url = await uploadProfilePicture(file);
                             // Set url in firestore
                             await setDoc(doc(db, 'users', user!.uid), { photoURL: url }, { merge: true });
-                            showToast('Profile picture uploaded successfully.', 'success');
+                            showToast('Profile picture imported successfully.', 'success');
                           } catch (err: any) {
-                            showToast('Upload failed: ' + err.message, 'error');
+                            showToast('Import failed: ' + err.message, 'error');
                           }
                         }
                       }}

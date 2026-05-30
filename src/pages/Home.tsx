@@ -265,7 +265,7 @@ export default function Home({ lang }: { lang: string }) {
       setActiveReactors([]);
       return;
     }
-    const reactionsRef = collection(db, `posts/${showReactorsModal}/reactions`);
+    const reactionsRef = collection(db, `posts/${showReactorsModal}/Reaction`);
     const unsubscribe = onSnapshot(reactionsRef, (snap) => {
       const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setActiveReactors(list);
@@ -435,7 +435,7 @@ export default function Home({ lang }: { lang: string }) {
     // 2. Set up new user reactions listeners only
     posts.forEach(post => {
       if (!userReactionsListenersRef.current[post.id]) {
-        const path = `posts/${post.id}/reactions/${user.uid}`;
+        const path = `posts/${post.id}/Reaction/${user.uid}`;
         userReactionsListenersRef.current[post.id] = onSnapshot(doc(db, path), (doc) => {
           if (doc.exists()) {
             setUserReactions(prev => ({ ...prev, [post.id]: doc.data().type }));
@@ -571,7 +571,7 @@ export default function Home({ lang }: { lang: string }) {
 
   const handleReaction = async (postId: string, type: string) => {
     if (!user) return;
-    const reactionDoc = doc(db, `posts/${postId}/reactions/${user.uid}`);
+    const reactionDoc = doc(db, `posts/${postId}/Reaction/${user.uid}`);
     const postRef = doc(db, 'posts', postId);
     
     const oldType = userReactions[postId];
@@ -608,7 +608,7 @@ export default function Home({ lang }: { lang: string }) {
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `posts/${postId}/reactions/${user.uid}`);
+      handleFirestoreError(error, OperationType.WRITE, `posts/${postId}/Reaction/${user.uid}`);
     }
     setActiveReactionMenu(null);
   };
@@ -1169,7 +1169,9 @@ export default function Home({ lang }: { lang: string }) {
                <div className="flex flex-col items-center justify-center p-8 aspect-[9/16] w-full text-center space-y-6">
                   <div className="w-16 h-1 bg-white/20 rounded-full" />
                   <div className="space-y-4">
-                    <h4 className="text-4xl font-serif italic opacity-40 group-hover:opacity-100 transition-opacity">Creative<br/>Masterpiece</h4>
+                    <h4 className="text-4xl font-serif italic opacity-40 group-hover:opacity-100 transition-opacity whitespace-pre-wrap px-4">
+                      {post.desc || 'Creative Masterpiece'}
+                    </h4>
                     <p className="text-[10px] font-bold text-cyan-500/50 uppercase tracking-[0.3em]">{post.genre || 'Prose'}</p>
                   </div>
                </div>
@@ -1209,7 +1211,9 @@ export default function Home({ lang }: { lang: string }) {
                 return (
                   <div className="space-y-8">
                     <div className="space-y-4 border-b border-white/5 pb-8">
-                      <h2 className="text-4xl font-serif italic text-white">{post.authorName || 'Writer Anonymous'}'s Work</h2>
+                      <h2 className="text-4xl font-serif italic text-white">
+                        {post.desc || `${post.authorName || 'Writer Anonymous'}'s Work`}
+                      </h2>
                       <div className="flex flex-wrap items-center gap-4">
                         <p className="text-rose-500 uppercase tracking-[0.3em] text-[10px] font-black">{ui.fullWorkTitle}</p>
                         <button

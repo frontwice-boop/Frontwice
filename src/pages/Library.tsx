@@ -9,7 +9,7 @@ const TRANSLATION_LANGUAGES = LANGUAGES.map(l => l.name);
 
 const DEFAULT_UI = {
   title: 'Research Library',
-  catalogingLabel: 'Processing Upload...',
+  catalogingLabel: 'Processing Import...',
   newEntryLabel: 'New Research Entry',
   placeholderTitle: 'Research Title...',
   manuscriptLabel: 'Select Manuscript (PDF/DOCX)',
@@ -168,7 +168,7 @@ export default function Library({ lang }: { lang: string }) {
   useEffect(() => {
     if (!user || works.length === 0) return;
     const unsubscribeFns = works.map(work => {
-      const path = `posts/${work.id}/reactions/${user.uid}`;
+      const path = `posts/${work.id}/Reaction/${user.uid}`;
       return onSnapshot(doc(db, path), (doc) => {
         if (doc.exists()) {
           setUserReactions(prev => ({ ...prev, [work.id]: doc.data().type }));
@@ -210,7 +210,7 @@ export default function Library({ lang }: { lang: string }) {
 
   const handleReaction = async (postId: string, type: string) => {
     if (!user) return;
-    const reactionDoc = doc(db, `posts/${postId}/reactions/${user.uid}`);
+    const reactionDoc = doc(db, `posts/${postId}/Reaction/${user.uid}`);
     const postRef = doc(db, 'posts', postId);
     
     const oldType = userReactions[postId];
@@ -236,7 +236,7 @@ export default function Library({ lang }: { lang: string }) {
         });
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `posts/${postId}/reactions/${user.uid}`);
+      handleFirestoreError(error, OperationType.WRITE, `posts/${postId}/Reaction/${user.uid}`);
     }
     setActiveReactionMenu(null);
   };
@@ -309,7 +309,7 @@ export default function Library({ lang }: { lang: string }) {
       }, 
       (error) => {
         console.error("Upload error:", error);
-        showToast('Upload failed. Check connection.', 'error');
+        showToast('Import failed. Check connection.', 'error');
         setUploadProgress(null);
       }, 
       async () => {
@@ -317,7 +317,7 @@ export default function Library({ lang }: { lang: string }) {
         setManuscriptURL(downloadURL);
         // We set to null after a small delay to avoid "stutter"
         setTimeout(() => setUploadProgress(null), 500);
-        showToast('File uploaded successfully.', 'success');
+        showToast('File imported successfully.', 'success');
 
         // USE FILENAME IF NO TITLE
         if (!newWork.title) {
@@ -548,7 +548,7 @@ export default function Library({ lang }: { lang: string }) {
                           <Upload size={24} className="text-cyan-500" />
                         </motion.div>
                         <span className="text-[10px] uppercase tracking-widest font-black text-cyan-500 z-10">
-                          {uploadProgress >= 100 ? 'Finalizing...' : 'Uploading...'}
+                          {uploadProgress >= 100 ? 'Finalizing...' : 'Importing...'}
                         </span>
                       </div>
                     ) : manuscriptURL ? (
@@ -637,7 +637,7 @@ export default function Library({ lang }: { lang: string }) {
             <button 
               onClick={() => { setIsFormOpen(true); setTimeout(() => fileInputRef.current?.click(), 100); }}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-cyan-500/10 text-cyan-500 rounded-xl hover:bg-cyan-500/20 transition-all active:scale-95 z-10"
-              title="Quick Manuscript Upload"
+              title="Quick Manuscript Import"
             >
               <Upload size={18} />
             </button>

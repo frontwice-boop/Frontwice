@@ -8,7 +8,7 @@ export async function uploadFile(
 ): Promise<string> {
   const user = auth.currentUser;
   if (!user) {
-    throw new Error('User must be authenticated to upload files.');
+    throw new Error('User must be authenticated to import files.');
   }
 
   const storageRef = ref(storage, path);
@@ -20,8 +20,9 @@ export async function uploadFile(
 export async function uploadProfilePicture(file: File): Promise<string> {
   const user = auth.currentUser;
   if (!user) {
-    throw new Error('User must be authenticated to upload files.');
+    throw new Error('User must be authenticated to import files.');
   }
+
   const path = `users/${user.uid}/profile_${Date.now()}`;
   return uploadFile(file, path);
 }

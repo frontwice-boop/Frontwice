@@ -22,7 +22,7 @@ const DEFAULT_LABELS = {
   biographyTitle: 'Biography Builder',
   biographyDesc: 'Map your life milestones and weave a legacy narrative.',
   researchTitle: 'Research Publisher',
-  researchDesc: 'Write, upload, and format your research paper directly, with zero AI involvement.',
+  researchDesc: 'Write, import, and format your research paper directly, with zero AI involvement.',
   adTitle: 'Ad Campaign Manager',
   adDesc: 'Generate reach and growth.',
   expertTitle: 'Expert AI Reviewer',
@@ -185,7 +185,7 @@ export default function Create({ lang, user, setLang }: { lang: string; user: an
           </div>
           <div className="space-y-2">
             <h3 className="text-xl font-bold">Expert Analysis Dashboard</h3>
-            <p className="text-sm text-gray-500 max-w-sm mx-auto">Upload your draft or paste your text below to receive a deep-dive analysis into your narrative structure and character development.</p>
+            <p className="text-sm text-gray-500 max-w-sm mx-auto">Import your draft or paste your text below to receive a deep-dive analysis into your narrative structure and character development.</p>
           </div>
           <textarea 
             value={textToReview}
