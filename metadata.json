@@ -1,6 +1,8 @@
 {
-  "name": "frontwice",
+  "name": "Frontwice",
   "description": "A refined platform for creative writing (Prose, Drama, Poetry), research documentation, and social sharing with AI-powered generator tools. Built with React and Firebase.",
   "requestFramePermissions": [],
-  "majorCapabilities": []
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }

@@ -7,6 +7,8 @@ import { registerSW } from 'virtual:pwa-register';
 // Register service worker for PWA
 registerSW({ immediate: true });
 
+console.log("connected");
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <App />

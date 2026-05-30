@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, Calendar, MapPin, User as UserIcon, Play, Image as ImageIcon, Video, PlusCircle, Upload, Sparkles, Heart, MessageCircle, Share2, CornerDownRight as Reply, Send, X as Close } from 'lucide-react';
+import { Search, Calendar, MapPin, User as UserIcon, Play, Image as ImageIcon, Video, PlusCircle, Upload, Sparkles, Heart, MessageCircle, Share2, CornerDownRight as Reply, Send, X as Close, ThumbsUp } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { translateMoments, translateUI, hasCache } from '../services/translationService';
 import { LANGUAGES } from '../constants';
@@ -15,19 +15,12 @@ interface Comment {
 
 const REACTIONS = [
   { type: 'like', icon: '👍', label: 'Like', color: 'text-blue-500' },
-  { type: 'love', icon: '❤️', label: 'Love', color: 'text-rose-500' },
-  { type: 'care', icon: '🤗', label: 'Care', color: 'text-yellow-400' },
-  { type: 'wow', icon: '😮', label: 'Wow', color: 'text-yellow-400' },
-  { type: 'haha', icon: '😆', label: 'Haha', color: 'text-yellow-400' },
-  { type: 'sad', icon: '😢', label: 'Sad', color: 'text-yellow-400' },
-  { type: 'anger', icon: '😡', label: 'Anger', color: 'text-orange-600' },
-];
-
-const INITIAL_MOMENTS = [
-  { title: "Summer of '84", year: "1984", location: "Family Home", user: "j_doe", type: 'video', image: "https://picsum.photos/seed/moment1/400/500" },
-  { title: "The Wedding Vows", year: "2010", location: "Santorini", user: "elena_w", type: 'photo', image: "https://picsum.photos/seed/moment2/400/500" },
-  { title: "First Steps", year: "2021", location: "Park Side", user: "papa_chen", type: 'video', image: "https://picsum.photos/seed/moment3/400/500" },
-  { title: "Graduation Day", year: "2024", location: "University", user: "mark_s", type: 'photo', image: "https://picsum.photos/seed/moment4/400/500" }
+  { type: 'love', icon: '❤️', label: 'Love', color: 'text-red-500' },
+  { type: 'care', icon: '🥰', label: 'Care', color: 'text-yellow-500' },
+  { type: 'haha', icon: '😆', label: 'Haha', color: 'text-yellow-500' },
+  { type: 'wow', icon: '😮', label: 'Wow', color: 'text-yellow-500' },
+  { type: 'sad', icon: '😢', label: 'Sad', color: 'text-yellow-500' },
+  { type: 'anger', icon: '😡', label: 'Angry', color: 'text-orange-600' },
 ];
 
 const TRANSLATION_LANGUAGES = LANGUAGES.map(l => l.name);
@@ -47,14 +40,17 @@ const DEFAULT_UI = {
   searchVideos: 'Search videos...',
   searchPictures: 'Search pictures...',
   endOfArchive: 'End of archive',
-  noItemsFound: 'No found in this archive.'
+  noItemsFound: 'No found in this archive.',
+  dbError: 'Connection interrupted. Please check your network or retry.'
 };
 
 import { useToast } from '../context/ToastContext';
 
 import { db, auth } from '../lib/firebase';
-import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs, updateDoc, increment, getDoc } from 'firebase/firestore';
+import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setDoc, doc, deleteDoc, getDocs, updateDoc, increment, getDoc, where } from 'firebase/firestore';
 import { useUser } from '../context/UserContext';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { generateMomentCaption, analyzeMomentSentiment } from '../services/geminiService';
 
 export default function Moments({ lang }: { lang: string }) {
   const { showToast } = useToast();
@@ -64,6 +60,9 @@ export default function Moments({ lang }: { lang: string }) {
   const [searchLocation, setSearchLocation] = useState('');
   const [searchUser, setSearchUser] = useState('');
   const [isPublishing, setIsPublishing] = useState(false);
+  const [isGeneratingCaption, setIsGeneratingCaption] = useState(false);
+  const [momentSentiment, setMomentSentiment] = useState<{ mood: string, explanation: string } | null>(null);
+  const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
   const [moments, setMoments] = useState<any[]>([]);
   const [translatedMoments, setTranslatedMoments] = useState<any[]>([]);
@@ -78,27 +77,53 @@ export default function Moments({ lang }: { lang: string }) {
 
   // Interaction State
   const [userReactions, setUserReactions] = useState<Record<string, string>>({});
+  const [userCommentLikes, setUserCommentLikes] = useState<Set<string>>(new Set());
   const [activeReactionMenu, setActiveReactionMenu] = useState<string | null>(null);
   const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
   const [comments, setComments] = useState<Record<string, any[]>>({});
   const [newComment, setNewComment] = useState('');
   const [replyTo, setReplyTo] = useState<{ id: string, user: string } | null>(null);
 
-  // Real-time moments listener
+  // Real-time moments listener - now synced with master posts feed
   useEffect(() => {
-    const q = query(collection(db, 'moments'), orderBy('createdAt', 'desc'));
+    if (!user) return;
+    const q = query(
+      collection(db, 'posts'), 
+      where('genre', '==', 'Moment'),
+      orderBy('createdAt', 'desc')
+    );
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const momentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const momentsData = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return { 
+          id: doc.id, 
+          ...data,
+          // Extract specific moment metadata if stored in fullWork or desc
+          year: data.year || new Date(data.createdAt?.toDate?.() || Date.now()).getFullYear().toString(),
+          location: data.location || 'Unknown'
+        };
+      });
       setMoments(momentsData);
+    }, (error) => {
+      if (error instanceof Error && error.message.includes('requires an index')) {
+        // Fallback for missing composite index
+        const fallbackQ = query(collection(db, 'posts'), orderBy('createdAt', 'desc'));
+        onSnapshot(fallbackQ, (s) => {
+          setMoments(s.docs.filter(d => d.data().genre === 'Moment').map(d => ({ id: d.id, ...d.data() })));
+        });
+        return;
+      }
+      handleFirestoreError(error, OperationType.GET, 'posts (Moments)');
     });
     return () => unsubscribe();
-  }, []);
+  }, [user]);
 
   // Real-time reactions listener for the current user
   useEffect(() => {
     if (!user) return;
     const unsubscribeFns = moments.map(moment => {
-      return onSnapshot(doc(db, `moments/${moment.id}/reactions/${user.uid}`), (doc) => {
+      const path = `posts/${moment.id}/reactions/${user.uid}`;
+      return onSnapshot(doc(db, path), (doc) => {
         if (doc.exists()) {
           setUserReactions(prev => ({ ...prev, [moment.id]: doc.data().type }));
         } else {
@@ -108,6 +133,8 @@ export default function Moments({ lang }: { lang: string }) {
             return next;
           });
         }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, path);
       });
     });
     return () => unsubscribeFns.forEach(fn => fn());
@@ -116,7 +143,8 @@ export default function Moments({ lang }: { lang: string }) {
   // Real-time comments listener for the selected moment
   useEffect(() => {
     if (!selectedMomentId) return;
-    const q = query(collection(db, `moments/${selectedMomentId}/comments`), orderBy('createdAt', 'asc'));
+    const path = `posts/${selectedMomentId}/comments`;
+    const q = query(collection(db, path), orderBy('createdAt', 'asc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const commentsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
       
@@ -155,6 +183,7 @@ export default function Moments({ lang }: { lang: string }) {
 
       if (lang !== 'English' && TRANSLATION_LANGUAGES.includes(lang)) {
         setIsTranslating(true);
+        setTranslatedMoments([]); // Reset to avoid language flash
         const translated = await translateMoments(moments, lang);
         setTranslatedMoments(translated);
         setIsTranslating(false);
@@ -173,18 +202,106 @@ export default function Moments({ lang }: { lang: string }) {
     return matchesTab && matchesYear && matchesLocation && matchesUser;
   });
 
+  const handleGenerateCaption = async () => {
+    if (!newMomentLocation || !newMomentYear) {
+      showToast('Please enter location and year for better context', 'warning');
+      return;
+    }
+    setIsGeneratingCaption(true);
+    setMomentSentiment(null);
+    try {
+      const caption = await generateMomentCaption(newMomentLocation, newMomentYear);
+      setNewMomentTitle(caption);
+      
+      // Auto-analyze sentiment
+      handleAnalyzeSentiment(caption);
+    } catch (error) {
+      showToast('Caption engine is busy. Please enter a title manually.', 'error');
+    } finally {
+      setIsGeneratingCaption(false);
+    }
+  };
+
+  const handleAnalyzeSentiment = async (caption: string) => {
+    setIsAnalyzingSentiment(true);
+    try {
+      const sentiment = await analyzeMomentSentiment(caption);
+      setMomentSentiment(sentiment);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setIsAnalyzingSentiment(false);
+    }
+  };
+
+  // Real-time comment likes listener for the current user
+  useEffect(() => {
+    if (!user || !selectedMomentId) {
+      setUserCommentLikes(new Set());
+      return;
+    }
+    
+    // We only need to listen to likes for comments of the selected moment
+    const path = `posts/${selectedMomentId}/comments`;
+    const unsubscribe = onSnapshot(collection(db, path), (snapshot) => {
+        snapshot.docs.forEach(commentDoc => {
+            const likesPath = `posts/${selectedMomentId}/comments/${commentDoc.id}/likes/${user.uid}`;
+            onSnapshot(doc(db, likesPath), (likeDoc) => {
+                if (likeDoc.exists()) {
+                    setUserCommentLikes(prev => new Set([...prev, commentDoc.id]));
+                } else {
+                    setUserCommentLikes(prev => {
+                        const next = new Set(prev);
+                        next.delete(commentDoc.id);
+                        return next;
+                    });
+                }
+            });
+        });
+    });
+    return () => unsubscribe();
+  }, [user, selectedMomentId]);
+
   const handleReaction = async (momentId: string, type: string) => {
     if (!user) return;
-    const reactionDoc = doc(db, `moments/${momentId}/reactions/${user.uid}`);
+    const reactionDoc = doc(db, `posts/${momentId}/reactions/${user.uid}`);
+    const momentRef = doc(db, 'posts', momentId);
     
-    if (userReactions[momentId] === type) {
-      await deleteDoc(reactionDoc);
-    } else {
-      await setDoc(reactionDoc, {
-        userId: user.uid,
-        type,
-        createdAt: serverTimestamp()
-      });
+    const oldType = userReactions[momentId];
+
+    try {
+      if (oldType === type) {
+        // Remove reaction
+        await deleteDoc(reactionDoc);
+        await updateDoc(momentRef, { 
+          likesCount: increment(-1),
+          [`reactionCounts.${type}`]: increment(-1)
+        });
+      } else if (oldType) {
+        // Change reaction
+        await setDoc(reactionDoc, {
+          userId: user.uid,
+          type,
+          createdAt: serverTimestamp()
+        });
+        await updateDoc(momentRef, {
+          [`reactionCounts.${oldType}`]: increment(-1),
+          [`reactionCounts.${type}`]: increment(1)
+        });
+      } else {
+        // New reaction
+        await setDoc(reactionDoc, {
+          userId: user.uid,
+          type,
+          createdAt: serverTimestamp()
+        });
+        await updateDoc(momentRef, { 
+          likesCount: increment(1),
+          [`reactionCounts.${type}`]: increment(1)
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `posts/${momentId}/reactions/${user.uid}`);
     }
     setActiveReactionMenu(null);
   };
@@ -192,25 +309,53 @@ export default function Moments({ lang }: { lang: string }) {
   const handleAddComment = async (momentId: string) => {
     if (!newComment.trim() || !user) return;
 
+    const commentData: any = {
+      authorId: user.uid,
+      authorName: profile?.displayName || 'Legacy Explorer',
+      text: newComment,
+      createdAt: serverTimestamp(),
+      parentCommentId: replyTo?.id || null,
+      replyToUser: replyTo?.user || null
+    };
+
+    const path = `posts/${momentId}/comments`;
     try {
-      await addDoc(collection(db, `moments/${momentId}/comments`), {
-        authorId: user.uid,
-        authorName: profile?.displayName || 'Legacy Explorer',
-        text: newComment,
-        createdAt: serverTimestamp(),
-        parentCommentId: replyTo?.id || null
+      await addDoc(collection(db, path), commentData);
+
+      // Update comments count on master posts collection
+      const momentRef = doc(db, 'posts', momentId);
+      await updateDoc(momentRef, {
+        commentsCount: increment(1)
       });
 
       setNewComment('');
       setReplyTo(null);
     } catch (error) {
-      console.error(error);
+      handleFirestoreError(error, OperationType.WRITE, path);
       showToast('Check connection to archive.', 'error');
     }
   };
 
-  const handleCommentLike = (commentId: string) => {
-    showToast('Archive transmission liked!', 'success');
+  const handleCommentLike = async (commentId: string) => {
+    if (!user || !selectedMomentId) return;
+    const likeRef = doc(db, `posts/${selectedMomentId}/comments/${commentId}/likes/${user.uid}`);
+    const commentRef = doc(db, `posts/${selectedMomentId}/comments`, commentId);
+
+    const isLiked = userCommentLikes.has(commentId);
+    
+    try {
+      if (isLiked) {
+         await deleteDoc(likeRef);
+         await updateDoc(commentRef, { likesCount: increment(-1) });
+         showToast('Signal boost removed.', 'info');
+      } else {
+         await setDoc(likeRef, { createdAt: serverTimestamp() });
+         await updateDoc(commentRef, { likesCount: increment(1) });
+         showToast('Archive transmission liked!', 'success');
+      }
+    } catch (error) {
+       handleFirestoreError(error, OperationType.WRITE, `posts/${selectedMomentId}/comments/${commentId}/likes`);
+    }
   };
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -231,16 +376,27 @@ export default function Moments({ lang }: { lang: string }) {
     }
 
     try {
-      await addDoc(collection(db, 'moments'), {
+      await addDoc(collection(db, 'posts'), {
         authorId: user.uid,
         authorName: profile?.displayName || 'Legacy Builder',
-        title: newMomentTitle,
+        desc: newMomentTitle,
+        fullWork: `Moment captured in ${newMomentLocation || 'Unknown'} (${newMomentYear})`,
         year: newMomentYear,
         location: newMomentLocation || 'Unknown',
+        genre: 'Moment',
         type: activeTab,
-        mediaURL: newMomentFile, // Using Base64 for now as requested
+        coverImage: newMomentFile,
+        images: [newMomentFile], // Wrap for consistency with gallery schema
+        likesCount: 0,
+        commentsCount: 0,
+        music: 'AI Original Audio',
+        color: 'from-rose-600 to-purple-600',
         createdAt: serverTimestamp()
       });
+
+      // Increment works count in profile
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, { worksCount: increment(1) });
 
       showToast('Moment published successfully!', 'success');
       
@@ -251,13 +407,13 @@ export default function Moments({ lang }: { lang: string }) {
       setNewMomentFile(null);
       setIsPublishing(false);
     } catch (error) {
-       console.error(error);
-       showToast('Critical transmission error.', 'error');
+       handleFirestoreError(error, OperationType.CREATE, 'posts');
+       showToast('An error occurred during transmission.', 'error');
     }
   };
 
   return (
-    <div className="min-h-screen bg-black text-gray-200 pb-24 p-6 relative" onMouseLeave={() => setActiveReactionMenu(null)}>
+    <div className="h-full bg-black text-gray-200 pb-24 p-6 relative overflow-y-auto no-scrollbar" onMouseLeave={() => setActiveReactionMenu(null)}>
       {/* AI Translating Indicator */}
       <AnimatePresence>
         {isTranslating && (
@@ -270,7 +426,7 @@ export default function Moments({ lang }: { lang: string }) {
             <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
               <Sparkles size={16} className="text-rose-500" />
             </motion.div>
-            <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-white">{ui.localizingLabel}</span>
+            <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-white">Archive Synchronized</span>
           </motion.div>
         )}
       </AnimatePresence>
@@ -324,13 +480,49 @@ export default function Moments({ lang }: { lang: string }) {
               </div>
 
               <div className="space-y-4">
-                <input 
-                  type="text" 
-                  value={newMomentTitle}
-                  onChange={(e) => setNewMomentTitle(e.target.value)}
-                  placeholder={ui.placeholderTitle} 
-                  className="w-full bg-white/5 border border-white/5 rounded-2xl py-4 px-6 text-sm focus:outline-none focus:ring-1 focus:ring-rose-500/30"
-                />
+                <div className="relative">
+                  <input 
+                    type="text" 
+                    value={newMomentTitle}
+                    onChange={(e) => setNewMomentTitle(e.target.value)}
+                    placeholder={ui.placeholderTitle} 
+                    className="w-full bg-white/5 border border-white/5 rounded-2xl py-4 pl-6 pr-12 text-sm focus:outline-none focus:ring-1 focus:ring-rose-500/30 font-serif italic"
+                  />
+                  <button 
+                    onClick={handleGenerateCaption}
+                    disabled={isGeneratingCaption}
+                    className="absolute right-4 top-1/2 -translate-y-1/2 text-rose-500 hover:text-rose-400 transition-all disabled:opacity-50"
+                    title="Generate AI Caption"
+                  >
+                    {isGeneratingCaption ? (
+                       <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}>
+                        <Sparkles size={18} />
+                      </motion.div>
+                    ) : (
+                      <Sparkles size={18} />
+                    )}
+                  </button>
+                </div>
+
+                <AnimatePresence>
+                  {momentSentiment && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="bg-zinc-800/50 border border-white/5 rounded-2xl p-4 flex gap-4 items-start"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center shrink-0">
+                        <Sparkles size={16} className="text-rose-500" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black uppercase tracking-widest text-rose-500">{momentSentiment.mood} VIBE</p>
+                        <p className="text-xs text-gray-400 italic">"{momentSentiment.explanation}"</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="grid grid-cols-2 gap-4">
                   <div className="relative">
                     <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-rose-500/50" size={14} />
@@ -478,7 +670,7 @@ export default function Moments({ lang }: { lang: string }) {
               whileHover={{ y: -5 }}
               className="bg-white/5 border border-white/10 rounded-[2rem] overflow-hidden group cursor-pointer shadow-lg relative aspect-[3/4]"
             >
-              <img src={moment.mediaURL || moment.image} alt={moment.title} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+              <img src={moment.coverImage || moment.images?.[0] || moment.mediaURL || (moment as any).image} alt={moment.title || moment.desc} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
               
               {/* Media Type Indicator */}
@@ -488,15 +680,16 @@ export default function Moments({ lang }: { lang: string }) {
                     <Play size={12} fill="white" />
                   </div>
                 ) : (
-                  <div className="p-2 bg-white/10 backdrop-blur-md rounded-full border border-white/20">
+                  <div className="p-2 bg-white/10 backdrop-blur-md rounded-full border border-white/20 text-white flex items-center justify-center">
                     <ImageIcon size={12} className="text-white" />
+                    {moment.images?.length > 1 && <span className="text-[8px] font-bold ml-1">+{moment.images.length - 1}</span>}
                   </div>
                 )}
               </div>
 
               {/* Moment Info */}
               <div className="absolute bottom-4 left-4 right-4 space-y-2">
-                <h4 className="font-serif italic text-white text-base leading-tight">{moment.title}</h4>
+                <h4 className="font-serif italic text-white text-base leading-tight line-clamp-2">{moment.title || moment.desc}</h4>
                 <div className="flex flex-wrap items-center gap-2 text-[8px] text-gray-400 font-bold uppercase tracking-widest">
                   <span className="flex items-center gap-1"><MapPin size={8} /> {moment.location}</span>
                   <span className="text-rose-500/50">•</span>
@@ -510,21 +703,24 @@ export default function Moments({ lang }: { lang: string }) {
                         <AnimatePresence>
                           {activeReactionMenu === moment.id && (
                             <motion.div 
-                              initial={{ opacity: 0, y: 10, scale: 0.8 }}
+                              initial={{ opacity: 0, y: 10, scale: 0.5, originY: 1 }}
                               animate={{ opacity: 1, y: -45, scale: 1 }}
-                              exit={{ opacity: 0, y: 10, scale: 0.8 }}
-                              className="absolute bottom-full left-0 bg-zinc-900 border border-white/10 rounded-full p-2 flex gap-2 z-50 shadow-2xl backdrop-blur-xl"
+                              exit={{ opacity: 0, y: 10, scale: 0.5 }}
+                              className="absolute bottom-full left-0 bg-zinc-900 border border-white/10 rounded-full p-1.5 flex gap-1 z-50 shadow-[0_10px_30px_-10px_rgba(0,0,0,1)] backdrop-blur-xl"
                             >
-                              {REACTIONS.map((reac) => (
+                              {REACTIONS.map((reac, idx) => (
                                 <motion.button
                                   key={reac.type}
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  transition={{ delay: idx * 0.05 }}
                                   whileHover={{ scale: 1.4, y: -5 }}
                                   whileTap={{ scale: 0.9 }}
                                   onClick={(e) => { e.stopPropagation(); handleReaction(moment.id, reac.type); }}
-                                  className="w-10 h-10 flex items-center justify-center text-2xl hover:bg-white/5 rounded-full transition-all relative group/emoji"
+                                  className="w-8 h-8 flex items-center justify-center text-xl hover:bg-white/5 rounded-full transition-all relative group/emoji"
                                 >
-                                  {reac.icon}
-                                  <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/80 backdrop-blur-md text-white text-[10px] px-2 py-1 rounded-lg opacity-0 group-hover/emoji:opacity-100 transition-opacity pointer-events-none border border-white/10 shadow-xl whitespace-nowrap">
+                                  <span className="drop-shadow-sm">{reac.icon}</span>
+                                  <span className="absolute -top-10 left-1/2 -translate-x-1/2 bg-black/90 backdrop-blur-md text-white text-[9px] px-2 py-0.5 rounded-full opacity-0 group-hover/emoji:opacity-100 transition-all duration-200 pointer-events-none border border-white/10 shadow-xl whitespace-nowrap font-bold">
                                     {reac.label}
                                   </span>
                                 </motion.button>
@@ -534,12 +730,45 @@ export default function Moments({ lang }: { lang: string }) {
                         </AnimatePresence>
                         <button 
                           onClick={(e) => { e.stopPropagation(); setActiveReactionMenu(activeReactionMenu === moment.id ? null : moment.id); }}
-                          className="flex items-center gap-1 group"
+                          onMouseEnter={() => { if (!activeReactionMenu) setActiveReactionMenu(moment.id); }}
+                          className="flex items-center gap-1 group relative"
                         >
                           {userReactions[moment.id] ? (
-                            <span className="text-sm">{REACTIONS.find(r => r.type === userReactions[moment.id])?.icon}</span>
+                            <div className="flex items-center gap-1">
+                              <motion.span 
+                                initial={{ scale: 0, rotate: -20 }}
+                                animate={{ scale: 1, rotate: 0 }}
+                                className="text-sm"
+                              >
+                                {REACTIONS.find(r => r.type === userReactions[moment.id])?.icon}
+                              </motion.span>
+                              <span className="text-[10px] font-bold text-white">{moment.likesCount || 0}</span>
+                            </div>
                           ) : (
-                            <Heart size={14} className="text-gray-500 group-hover:text-rose-500 transition-colors" />
+                            <div className="flex items-center gap-1">
+                              <ThumbsUp size={14} className="text-gray-500 group-hover:text-blue-500 transition-colors fill-current opacity-60 group-hover:opacity-100" />
+                              <span className="text-[10px] font-bold text-gray-500">{moment.likesCount || 0}</span>
+                            </div>
+                          )}
+
+                          {/* Reaction summary icons */}
+                          {moment.likesCount > 0 && moment.reactionCounts && (
+                            <div className="absolute -top-3 left-0 flex -space-x-1">
+                              {Object.entries(moment.reactionCounts)
+                                .filter(([_, count]: any) => count > 0)
+                                .sort(([_, a]: any, [__, b]: any) => b - a)
+                                .slice(0, 3)
+                                .map(([type], idx) => (
+                                  <div 
+                                    key={type} 
+                                    className="w-4 h-4 rounded-full bg-zinc-900 border border-white/10 flex items-center justify-center text-[8px] shadow-lg"
+                                    style={{ zIndex: 10 - idx }}
+                                  >
+                                    {REACTIONS.find(r => r.type === type)?.icon}
+                                  </div>
+                                ))
+                              }
+                            </div>
                           )}
                         </button>
                       </div>
@@ -548,7 +777,7 @@ export default function Moments({ lang }: { lang: string }) {
                         className="flex items-center gap-1 group"
                       >
                         <MessageCircle size={14} className="text-gray-500 group-hover:text-cyan-500 transition-colors" />
-                        <span className="text-[8px] text-gray-500 font-bold">{(comments[moment.id] || []).length}</span>
+                        <span className="text-[10px] text-gray-500 font-bold">{moment.commentsCount || 0}</span>
                       </button>
                    </div>
                    <div className="flex items-center gap-1 opacity-50">
@@ -616,18 +845,29 @@ export default function Moments({ lang }: { lang: string }) {
                           
                           {/* Comment Content Bubble */}
                           <div className="flex-1 space-y-1">
-                            <div className="bg-zinc-900 border border-white/5 rounded-[1.25rem] px-4 py-2 w-fit max-w-[95%] shadow-sm">
+                            <div className="relative inline-block bg-zinc-900 border border-white/5 rounded-[1.25rem] px-4 py-2 w-fit max-w-[95%] shadow-sm pr-12">
                               <p className="text-[12px] font-bold text-gray-100 mb-0.5">@{comment.authorName}</p>
                               <p className="text-sm text-gray-300 leading-tight font-normal">{comment.text}</p>
+                              
+                              {/* Facebook-style reaction overlay on comment bubble */}
+                              {comment.likesCount > 0 && (
+                                <div className="absolute -bottom-1.5 right-2 bg-zinc-800 border border-cyan-500/30 rounded-full px-1.5 py-0.5 flex items-center gap-1 shadow-md text-[9px] font-bold text-cyan-400">
+                                  <span className="text-[10px]">👍</span>
+                                  <span>{comment.likesCount}</span>
+                                </div>
+                              )}
                             </div>
                             
                             {/* Inline Actions */}
                             <div className="flex items-center gap-4 px-3">
                               <button 
                                 onClick={() => handleCommentLike(comment.id)}
-                                className="text-[11px] font-bold text-gray-500 hover:text-white transition-colors"
+                                className={cn(
+                                  "text-[11px] font-bold transition-colors",
+                                  userCommentLikes.has(comment.id) ? "text-cyan-400 font-extrabold" : "text-gray-500 hover:text-white"
+                                )}
                               >
-                                Like
+                                {userCommentLikes.has(comment.id) ? 'Liked' : 'Like'}
                               </button>
                               <button 
                                 onClick={() => setReplyTo({ id: comment.id, user: comment.authorName })}
@@ -649,16 +889,27 @@ export default function Moments({ lang }: { lang: string }) {
                                   {reply.authorName?.[0]?.toUpperCase() || 'L'}
                                 </div>
                                 <div className="flex-1 space-y-1">
-                                  <div className="bg-zinc-900/50 border border-white/5 rounded-[1rem] px-3 py-1.5 w-fit max-w-[95%] shadow-sm">
+                                  <div className="bg-zinc-900/50 border border-white/5 rounded-[1rem] px-3 py-1.5 w-fit max-w-[95%] shadow-sm relative pr-10">
                                     <p className="text-[11px] font-bold text-gray-200 mb-0.5">@{reply.authorName}</p>
                                     <p className="text-xs text-gray-400 leading-tight">{reply.text}</p>
+                                    
+                                    {/* Facebook-style reaction overlay on reply bubble */}
+                                    {reply.likesCount > 0 && (
+                                      <div className="absolute -bottom-1.5 right-1 bg-zinc-850 border border-cyan-500/30 rounded-full px-1 py-0.5 flex items-center gap-1 shadow-md text-[8px] font-bold text-cyan-400">
+                                        <span className="text-[9px]">👍</span>
+                                        <span>{reply.likesCount}</span>
+                                      </div>
+                                    )}
                                   </div>
                                   <div className="flex items-center gap-4 px-2">
                                     <button 
                                       onClick={() => handleCommentLike(reply.id)}
-                                      className="text-[10px] font-bold text-gray-600 hover:text-white transition-colors"
+                                      className={cn(
+                                        "text-[10px] font-bold transition-colors",
+                                        userCommentLikes.has(reply.id) ? "text-cyan-400 font-extrabold" : "text-gray-600 hover:text-white"
+                                      )}
                                     >
-                                      Like
+                                      {userCommentLikes.has(reply.id) ? 'Liked' : 'Like'}
                                     </button>
                                     <button 
                                       onClick={() => setReplyTo({ id: comment.id, user: reply.authorName })}

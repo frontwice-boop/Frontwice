@@ -28,14 +28,58 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     }, 4000);
   }, []);
 
+  React.useEffect(() => {
+    const handleQuotaError = (e: Event) => {
+       const detail = (e as CustomEvent).detail || 'Database quota exceeded. Check again tomorrow.';
+       showToast(detail, 'error');
+    };
+    const handleGeneralError = (e: Event) => {
+       const detail = (e as CustomEvent).detail || 'Operation failed. Check signal.';
+       showToast(detail, 'error');
+    };
+    window.addEventListener('firestore-quota-exceeded', handleQuotaError);
+    window.addEventListener('firestore-error', handleGeneralError);
+    return () => {
+      window.removeEventListener('firestore-quota-exceeded', handleQuotaError);
+      window.removeEventListener('firestore-error', handleGeneralError);
+    };
+  }, [showToast]);
+
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const renderMessage = (msg: string) => {
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+    const parts = msg.split(urlRegex);
+    return parts.map((part, i) => {
+      if (part.match(urlRegex)) {
+        let label = " [Link]";
+        if (part.includes("/project/")) {
+          label = " [Open Firebase Console ↗]";
+        } else if (part.includes("pricing")) {
+          label = " [View Pricing Limits ↗]";
+        }
+        return (
+          <a
+            key={i}
+            href={part}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline text-amber-400 hover:text-amber-300 font-extrabold tracking-normal normal-case inline-block ml-1 pointer-events-auto"
+          >
+            {label}
+          </a>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
   };
 
   return (
     <ToastContext.Provider value={{ showToast }}>
       {children}
-      <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-3 w-[90%] max-w-xs pointer-events-none">
+      <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[300] flex flex-col gap-3 w-[90%] max-w-sm pointer-events-none">
         <AnimatePresence>
           {toasts.map((toast) => (
             <motion.div
@@ -58,12 +102,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   {toast.type === 'warning' && <Info size={18} />}
                   {toast.type === 'info' && <Bell size={18} />}
                 </div>
-                <p className="text-xs font-bold uppercase tracking-wider leading-relaxed flex-1">
-                  {toast.message}
+                <p className="text-xs font-bold uppercase tracking-wider leading-relaxed flex-1 break-words">
+                  {renderMessage(toast.message)}
                 </p>
                 <button 
                   onClick={() => removeToast(toast.id)}
-                  className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                  className="p-1 hover:bg-white/10 rounded-full transition-colors flex-shrink-0"
                 >
                   <X size={14} />
                 </button>

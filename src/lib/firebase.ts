@@ -1,13 +1,24 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getAuth, initializeAuth, browserLocalPersistence, browserPopupRedirectResolver } from 'firebase/auth';
+import { initializeFirestore, doc, getDocFromServer, persistentLocalCache, persistentMultipleTabManager } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-// You MUST use the firestoreDatabaseId from the firebase-applet-config.json file
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
-export const auth = getAuth(app);
+// Using initializeFirestore with offline persistence enabled
+export const db = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+}, firebaseConfig.firestoreDatabaseId);
+
+// Using initializeAuth for better control in iframe/preview environments
+export const auth = initializeAuth(app, {
+  persistence: browserLocalPersistence,
+  popupRedirectResolver: browserPopupRedirectResolver,
+});
+
+export const storage = getStorage(app);
 
 // Validation check
 async function testConnection() {

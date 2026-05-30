@@ -6,11 +6,7 @@ import { cn } from '../lib/utils';
 import { useToast } from '../context/ToastContext';
 import { LANGUAGES } from '../constants';
 
-const INITIAL_CHATS = [
-  { id: '1', name: 'Elite Poets Society', lastMsg: 'The new drama script is ready!', time: '12:45', unread: 2 },
-  { id: '2', name: 'Dr. Sarah Jenkins', lastMsg: 'Thank you for your feedback on...', time: 'Yesterday', unread: 0 },
-  { id: '3', name: 'frontwice AI Assistant', lastMsg: 'I have some suggestions for your...', time: 'Mon', unread: 0 },
-];
+const INITIAL_CHATS: any[] = [];
 
 const TRANSLATION_LANGUAGES = LANGUAGES.map(l => l.name);
 
@@ -21,22 +17,31 @@ const DEFAULT_UI = {
   communityTitle: 'Community Chat',
   communityDesc: 'Connect with fellow researchers and writers worldwide.',
   online: 'Online',
-  typePlaceholder: 'Type a message...'
+  typePlaceholder: 'Type a message...',
+  emptyTransmissions: 'No transmissions decoded',
+  noMatchingDecodes: 'No matching decodes found',
+  connectingCommunity: 'Connecting to global community archive...',
+  audioLinkEstablished: 'Secure audio link established.',
+  videoStreamStarted: 'Encrypted video stream initializing...',
+  archiveProtocolsActive: 'Archive protocols active.',
+  searchingCollaborators: 'Searching for verified collaborators...',
+  dbError: 'Database signal disrupted. Please check your connection or retry.'
 };
 
 export default function Chat({ lang }: { lang: string }) {
   const { showToast } = useToast();
   const [isTranslating, setIsTranslating] = useState(false);
-  const [chats, setChats] = useState(INITIAL_CHATS);
+  const [chats, setChats] = useState<any[]>([]);
   const [ui, setUi] = useState(DEFAULT_UI);
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Record<string, any[]>>({
-    '1': [
-      { id: 'm1', text: 'Hello everyone!', sender: 'Marcus', time: '12:00', mine: false },
-      { id: 'm2', text: 'The new drama script is ready!', sender: 'Sarah', time: '12:45', mine: false },
-    ]
-  });
+  const [messages, setMessages] = useState<Record<string, any[]>>({});
   const [inputValue, setInputValue] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredChats = (chats || []).filter(c => 
+    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    c.lastMsg.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   useEffect(() => {
     const applyTranslation = async () => {
@@ -80,19 +85,19 @@ export default function Chat({ lang }: { lang: string }) {
   };
 
   const handleCall = () => {
-    showToast('Secure audio link established.', 'info');
+    showToast(ui.audioLinkEstablished, 'info');
   };
 
   const handleVideoCall = () => {
-    showToast('Encrypted video stream initializing...', 'info');
+    showToast(ui.videoStreamStarted, 'info');
   };
 
   const handleMoreActions = () => {
-    showToast('Archive protocols active.', 'info');
+    showToast(ui.archiveProtocolsActive, 'info');
   };
 
   const handleNewChat = () => {
-    showToast('Searching for verified collaborators...', 'info');
+    showToast(ui.searchingCollaborators, 'info');
   };
 
   const selectedChat = chats.find(c => c.id === selectedChatId);
@@ -202,7 +207,7 @@ export default function Chat({ lang }: { lang: string }) {
             exit={{ opacity: 0, scale: 0.8, y: -20 }}
             className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-black/60 backdrop-blur-xl px-6 py-2 rounded-full border border-cyan-500/30 flex items-center gap-3 shadow-2xl"
           >
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
+            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}>
               <Sparkles size={16} className="text-cyan-500" />
             </motion.div>
             <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-white">{ui.decodingLabel}</span>
@@ -224,15 +229,28 @@ export default function Chat({ lang }: { lang: string }) {
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
         <input 
           type="text" 
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           placeholder={ui.searchPlaceholder}
           className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all shadow-xl"
         />
       </div>
 
       <div className="flex-1 overflow-y-auto no-scrollbar space-y-2">
-        {chats.map((chat, i) => (
-          <motion.button 
-            key={chat.id}
+        {chats.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center opacity-20 space-y-4">
+             <MessageCircle size={48} strokeWidth={1} />
+             <p className="text-xs uppercase tracking-widest font-black">{ui.emptyTransmissions}</p>
+          </div>
+        ) : filteredChats.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center opacity-20 space-y-4">
+             <Search size={48} strokeWidth={1} />
+             <p className="text-xs uppercase tracking-widest font-black">{ui.noMatchingDecodes}</p>
+          </div>
+        ) : (
+          filteredChats.map((chat, i) => (
+            <motion.button 
+              key={chat.id}
             onClick={() => setSelectedChatId(chat.id)}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -257,11 +275,11 @@ export default function Chat({ lang }: { lang: string }) {
               </div>
             )}
           </motion.button>
-        ))}
+        )))}
       </div>
 
       <div 
-        onClick={() => showToast('Connecting to global community archive...', 'info')}
+        onClick={() => showToast(ui.connectingCommunity, 'info')}
         className="mt-8 p-6 bg-white/5 rounded-3xl border border-white/10 flex items-center gap-4 group hover:bg-white/10 transition-all cursor-pointer"
       >
         <div className="p-3 bg-cyan-500/10 rounded-xl text-cyan-400 group-hover:bg-cyan-500 group-hover:text-black transition-all">

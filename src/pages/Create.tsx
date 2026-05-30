@@ -7,6 +7,7 @@ import BiographyBuilder from '../components/Create/BiographyBuilder';
 import AdCampaignManager from '../components/Create/AdCampaignManager';
 import { cn } from '../lib/utils';
 
+
 import { translateUI, hasCache } from '../services/translationService';
 
 type CreateMode = 'creative' | 'biography' | 'research' | 'ad' | 'expert';
@@ -20,18 +21,19 @@ const DEFAULT_LABELS = {
   creativeDesc: 'Choose your medium and let your creativity flow.',
   biographyTitle: 'Biography Builder',
   biographyDesc: 'Map your life milestones and weave a legacy narrative.',
-  researchTitle: 'Research Builder',
-  researchDesc: 'Build a complete academic blueprint chapter by chapter.',
+  researchTitle: 'Research Publisher',
+  researchDesc: 'Write, upload, and format your research paper directly, with zero AI involvement.',
   adTitle: 'Ad Campaign Manager',
   adDesc: 'Generate reach and growth.',
   expertTitle: 'Expert AI Reviewer',
   expertDesc: 'Get professional feedback on your writing quality.',
   aiAssistantTitle: 'AI Writing Assistant',
   aiAssistantDesc: 'Our integrated Gemini AI can help you expand chapters, generate character cards, or refine your research citations.',
+  dbError: 'Database signal disrupted. Please check your connection or retry.',
   tools: {
-    creative: { label: 'Creative Suite', desc: 'Prose, Drama, Poetry' },
+    creative: { label: 'Creative Suite', desc: 'Prose, Drama, Poetry, Research' },
     biography: { label: 'Biography Builder', desc: 'Timeline & AI expansion' },
-    research: { label: 'Creative Research', desc: 'Chapters 1-5 documentation' },
+    research: { label: 'Research Publication', desc: 'Direct manuscript submission' },
     ad: { label: 'Ad Campaign', desc: 'Reach more readers' },
     expert: { label: 'Expert Review', desc: 'Professional AI Feedback' }
   }
@@ -64,6 +66,18 @@ export default function Create({ lang, user, setLang }: { lang: string; user: an
       const data = await generateExpertReview({
         content: textToReview,
         language: lang
+      }, (partial) => {
+        // partial is the raw JSON string so far
+        try {
+          // Attempt a very loose parse just for the summary to show progress
+          const summaryMatch = partial.match(/"summary"\s*:\s*"((?:[^"\\]|\\.)*)/i);
+          if (summaryMatch && summaryMatch[1]) {
+            setExpertResult((prev: any) => ({
+              ...prev,
+              summary: summaryMatch[1].replace(/\\n/g, '\n')
+            }));
+          }
+        } catch (e) {}
       });
       setExpertResult(data);
       showToast('Expert review completed!', 'success');
@@ -188,7 +202,7 @@ export default function Create({ lang, user, setLang }: { lang: string; user: an
             )}
           >
             {isReviewing ? (
-              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+              <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}>
                 <Sparkles size={16} />
               </motion.div>
             ) : (
@@ -275,7 +289,7 @@ export default function Create({ lang, user, setLang }: { lang: string; user: an
             exit={{ opacity: 0, y: -10 }}
             className="absolute top-4 left-1/2 -translate-x-1/2 bg-black/40 backdrop-blur-md px-4 py-1 rounded-full border border-rose-500/30 flex items-center gap-2 z-50 shadow-xl"
           >
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
+            <motion.div animate={{ scale: [1, 1.2, 1] }} transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}>
               <Sparkles className="text-rose-500" size={12} />
             </motion.div>
             <span className="text-[10px] uppercase font-bold tracking-widest text-white italic">AI Syncing Hub...</span>

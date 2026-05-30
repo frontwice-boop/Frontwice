@@ -2,12 +2,16 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Mail, Lock, ArrowRight, UserPlus, LogIn, Eye, EyeOff, Camera, ShieldCheck, Smartphone, User, Globe, Sparkles, Check, ChevronDown, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { RecaptchaVerifier } from 'firebase/auth';
 
 import { useUser } from '../context/UserContext';
 import { useToast } from '../context/ToastContext';
+import { auth } from '../lib/firebase';
 import { translateUI, hasCache } from '../services/translationService';
 import { LANGUAGES } from '../constants';
+import { LoginSkeleton } from '../components/ui/Skeleton';
 
+// Language labels moved to constants.ts in a real app, keeping here for now as requested.
 const DEFAULT_LABELS = {
   loginTab: 'LOGIN',
   signupTab: 'SIGNUP',
@@ -32,13 +36,27 @@ const DEFAULT_LABELS = {
   errorWeakPassword: 'Password is too weak. (Min. 6 characters)',
   errorUserNotFound: 'No account found with this email.',
   errorWrongPassword: 'Incorrect password. Please try again.',
-  errorGeneric: 'Authentication failed. Please try again.'
+  errorGeneric: 'Authentication failed. Please try again.',
+  dbError: 'Connection interrupted. Please check your network or retry.',
+  phoneTab: 'PHONE',
+  phoneNumber: 'Phone Number',
+  sendCode: 'Send Verification Code',
+  enterOtp: 'Enter 6-digit Code',
+  verifyCode: 'Verify & Continue',
+  resendCode: 'Resend Code',
+  invalidPhone: 'Please enter a valid phone number with country code (e.g., +1234567890).',
+  invalidOtp: 'Invalid verification code. Please check and try again.'
 };
 
 export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
-  const { signIn, signUpWithEmail, signInWithEmail } = useUser();
+  const { signIn, signUpWithEmail, signInWithEmail, signInWithPhone, verifyOtp, resendVerification } = useUser();
   const { showToast } = useToast();
-  const [isLogin, setIsLogin] = useState(true);
+  const [authFlow, setAuthFlow] = useState<'selection' | 'login' | 'signup' | 'phone'>('selection');
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otp, setOtp] = useState('');
+  const [phoneStep, setPhoneStep] = useState<'number' | 'code'>('number');
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const recaptchaRef = useRef<any>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [profilePic, setProfilePic] = useState<string | null>(null);
@@ -58,13 +76,25 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
 
   useEffect(() => {
     const applyTranslation = async () => {
-      if (lang !== 'English') {
-        setIsTranslating(true);
-        const translated = await translateUI(DEFAULT_LABELS, lang);
-        if (translated) setLabels(translated);
-        setIsTranslating(false);
-      } else {
+      // Reset to English immediately to show user that action was taken
+      if (lang === 'English') {
         setLabels(DEFAULT_LABELS);
+        return;
+      }
+
+      setIsTranslating(true);
+      try {
+        const translated = await translateUI(DEFAULT_LABELS, lang);
+        if (translated) {
+          setLabels(translated);
+        } else {
+          setLabels(DEFAULT_LABELS);
+        }
+      } catch (err) {
+        console.error("Translation error:", err);
+        setLabels(DEFAULT_LABELS);
+      } finally {
+        setIsTranslating(false);
       }
     };
     applyTranslation();
@@ -84,25 +114,36 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!isLogin && password !== confirmPassword) {
+    if (authFlow === 'signup' && password !== confirmPassword) {
       showToast("Passwords don't match!", "error");
       return;
     }
 
     setIsLoading(true);
     try {
-      if (isLogin) {
-        await signInWithEmail(email, password, lang);
+      if (authFlow === 'login') {
+        const user = await signInWithEmail(email, password, lang);
         showToast(labels.welcomeBack, "success");
-      } else {
-        await signUpWithEmail(email, password, name, username, profilePic || '', lang);
-        showToast(labels.accountCreated, "success");
+        onLogin(user);
+      } else if (authFlow === 'signup') {
+        const user = await signUpWithEmail(email, password, name, username, profilePic || '', lang);
+        showToast(labels.welcomeBack, "success");
+        onLogin(user);
+      } else if (authFlow === 'phone') {
+        if (phoneStep === 'number') {
+          await handleSendPhoneCode();
+        } else {
+          const user = await handleVerifyOtp();
+          onLogin(user);
+        }
       }
     } catch (error: any) {
       console.error("Auth error:", error);
       let message = labels.errorGeneric;
       
-      if (error.code === 'auth/email-already-in-use') {
+      if (error.code === 'unavailable' || error.code === 'network-request-failed') {
+        message = labels.dbError;
+      } else if (error.code === 'auth/email-already-in-use') {
         message = labels.errorEmailInUse;
       } else if (error.code === 'auth/invalid-email') {
         message = labels.errorInvalidEmail;
@@ -115,6 +156,55 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
       }
 
       showToast(message, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSendPhoneCode = async () => {
+    if (!phoneNumber.startsWith('+')) {
+      showToast(labels.invalidPhone, "error");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      if (!recaptchaRef.current) {
+        recaptchaRef.current = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'invisible',
+          callback: () => {
+            console.log('Recaptcha verified');
+          }
+        });
+        await recaptchaRef.current.render();
+      }
+
+      const result = await signInWithPhone(phoneNumber, recaptchaRef.current);
+      setConfirmationResult(result);
+      setPhoneStep('code');
+      showToast("Verification code sent!", "success");
+    } catch (err: any) {
+      console.error("Phone send error:", err);
+      showToast(err.message || labels.errorGeneric, "error");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async () => {
+    if (otp.length !== 6) {
+      showToast("Please enter a 6-digit code", "error");
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      const user = await verifyOtp(confirmationResult, otp);
+      showToast(labels.welcomeBack, "success");
+      return user;
+    } catch (err: any) {
+      console.error("Verification error:", err);
+      showToast(labels.invalidOtp, "error");
     } finally {
       setIsLoading(false);
     }
@@ -229,7 +319,6 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
                 <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
                   <Sparkles size={10} className="text-rose-500" />
                 </motion.div>
-                <span className="text-[8px] font-bold text-rose-500 uppercase tracking-tighter">AI Localizing...</span>
               </motion.div>
             )}
           </AnimatePresence>
@@ -239,104 +328,127 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
             initial={{ x: -20, opacity: 0 }}
             animate={{ x: 0, opacity: 1 }}
           >
-            <div className="flex bg-black/40 p-1 rounded-xl mb-8">
-              <button 
-                onClick={() => setIsLogin(true)}
-                className={cn("flex-1 py-2 text-xs font-bold rounded-lg transition-all", isLogin ? "bg-white text-black" : "text-gray-500 hover:text-white uppercase")}
-              >
-                {labels.loginTab}
-              </button>
-              <button 
-                onClick={() => setIsLogin(false)}
-                className={cn("flex-1 py-2 text-xs font-bold rounded-lg transition-all", !isLogin ? "bg-white text-black" : "text-gray-500 hover:text-white uppercase")}
-              >
-                {labels.signupTab}
-              </button>
-            </div>
-
-                {!isLogin && (
-                  <div className="flex flex-col items-center mb-6">
-                    <div 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="w-20 h-20 bg-white/5 border-2 border-dashed border-white/20 rounded-full flex flex-col items-center justify-center cursor-pointer hover:border-rose-500/50 transition-colors overflow-hidden relative group"
-                    >
-                      {profilePic ? (
-                        <img src={profilePic} alt="Profile" className="w-full h-full object-cover" />
-                      ) : (
-                        <>
-                          <Camera size={20} className="text-gray-500 group-hover:text-rose-500 transition-colors" />
-                          <span className="text-[8px] text-gray-500 font-bold mt-1 group-hover:text-rose-500 uppercase">{labels.photo}</span>
-                        </>
-                      )}
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                        <Camera size={16} />
-                      </div>
-                    </div>
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      onChange={handleProfilePicChange} 
-                      className="hidden" 
-                      accept="image/*"
-                    />
-                  </div>
-                )}
-
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <div className="flex flex-col gap-4 mb-8">
               <button 
                 type="button"
                 onClick={async () => {
-                  setIsLoading(true);
                   try {
-                    await signIn(lang);
-                    showToast(labels.welcomeBack, "success");
+                    setIsLoading(true);
+                    const user = await signIn(lang);
+                    onLogin(user);
                   } catch (error: any) {
-                    console.error("Google Auth error:", error);
-                    if (error.code === 'auth/popup-blocked') {
-                      showToast('Popup blocked! Please allow popups for this site.', 'error');
-                    } else if (error.code === 'auth/cancelled-popup-request') {
-                      // Operation cancelled, no need for toast
-                    } else {
-                      showToast(labels.errorGeneric, "error");
-                    }
-                  } finally {
                     setIsLoading(false);
+                    console.error("Google Auth error:", error);
+                    
+                    if (error.code === 'auth/popup-blocked') {
+                      showToast('Authentication window blocked! Please allow popups and try again.', 'error');
+                    } else if (error.code === 'auth/cancelled-popup-request' || error.code === 'auth/popup-closed-by-user') {
+                      // Silently handle cancellations
+                    } else if (error.message && (error.message.includes('ARE-BLOCKED') || error.message.includes('identitytoolkit') || error.message.includes('permission-denied'))) {
+                      showToast('Login is being configured. Please try again later or use email.', 'error');
+                    } else if (error.code === 'auth/account-exists-with-different-credential') {
+                      showToast('An account already exists with this email using a different login method.', 'error');
+                    } else if (error.code === 'auth/unauthorized-domain') {
+                      showToast('Access restricted from this domain. Please contact support.', 'error');
+                    } else if (error.code === 'auth/invalid-api-key') {
+                      showToast('App configuration error. Please try again shortly.', 'error');
+                    } else if (error.code === 'auth/operation-not-allowed') {
+                      showToast('Social login is currently unavailable.', 'error');
+                    } else {
+                      showToast(error.message || labels.errorGeneric, "error");
+                    }
                   }
                 }}
                 disabled={isLoading}
-                className="w-full py-4 bg-white text-black rounded-2xl font-black flex items-center justify-center gap-3 hover:bg-gray-100 active:scale-95 transition-all shadow-xl shadow-white/5 disabled:opacity-50 group mb-2"
+                className="w-full py-5 bg-white text-black rounded-[2rem] font-black flex flex-col items-center justify-center gap-1 hover:bg-gray-100 active:scale-[0.98] transition-all shadow-2xl shadow-white/10 disabled:opacity-50 group relative overflow-hidden text-sm"
               >
-                {isLoading ? (
-                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
-                ) : (
-                  <>
-                    <div className="bg-white p-1 rounded-lg">
-                      <svg className="w-5 h-5" viewBox="0 0 24 24">
-                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                        <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/>
-                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                      </svg>
-                    </div>
-                    <span className="text-xs uppercase tracking-widest">{labels.googleBtn}</span>
-                    <ArrowRight className="text-gray-400 group-hover:text-black group-hover:translate-x-1 transition-all" size={16} />
-                  </>
-                )}
+                <div className="flex items-center gap-3">
+                  <div className="bg-white p-1 rounded-lg">
+                    <svg className="w-6 h-6" viewBox="0 0 24 24">
+                      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                      <path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l3.66-2.84z"/>
+                      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                    </svg>
+                  </div>
+                  <span className="text-sm uppercase tracking-[0.2em]">{labels.googleBtn}</span>
+                </div>
               </button>
-
-              <div className="relative my-6">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/10"></div>
-                </div>
-                <div className="relative flex justify-center text-[10px] uppercase font-bold">
-                  <span className="bg-[#121212] px-4 text-gray-500">{labels.orEmail}</span>
-                </div>
+              
+              <div className="flex flex-col gap-3">
+                <button 
+                  type="button"
+                  onClick={() => setAuthFlow('login')}
+                  className={cn("w-full py-4 border rounded-2xl text-xs font-black transition-all uppercase tracking-widest", authFlow === 'login' ? "bg-white text-black border-white" : "bg-white/5 border-white/5 text-gray-400 hover:text-white")}
+                >
+                  Email Login
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setAuthFlow('signup')}
+                  className={cn("w-full py-4 border rounded-2xl text-xs font-black transition-all uppercase tracking-widest", authFlow === 'signup' ? "bg-white text-black border-white" : "bg-white/5 border-white/5 text-gray-400 hover:text-white")}
+                >
+                  Email Signup
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setAuthFlow('phone');
+                    setPhoneStep('number');
+                  }}
+                  className={cn("w-full py-4 border rounded-2xl text-xs font-black transition-all uppercase tracking-widest", authFlow === 'phone' ? "bg-white text-black border-white" : "bg-white/5 border-white/5 text-gray-400 hover:text-white")}
+                >
+                  Phone Login
+                </button>
               </div>
+            </div>
 
-              {!isLogin && (
-                    <>
-                      <div className="space-y-1">
-                        <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.fullName}</label>
+            <div id="recaptcha-container"></div>
+
+
+            {authFlow !== 'selection' && (
+              <button 
+                type="button"
+                onClick={() => setAuthFlow('selection')}
+                className="mb-4 text-[10px] text-gray-500 hover:text-white uppercase font-bold flex items-center gap-1"
+              >
+                ← Back
+              </button>
+            )}
+
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              {authFlow === 'signup' && (
+                <div className="flex flex-col items-center mb-6">
+                  <div 
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-20 h-20 bg-white/5 border-2 border-dashed border-white/20 rounded-full flex flex-col items-center justify-center cursor-pointer hover:border-rose-500/50 transition-colors overflow-hidden relative group"
+                  >
+                    {profilePic ? (
+                      <img src={profilePic} alt="Profile" className="w-full h-full object-cover" />
+                    ) : (
+                      <>
+                        <Camera size={20} className="text-gray-500 group-hover:text-rose-500 transition-colors" />
+                        <span className="text-[8px] text-gray-500 font-bold mt-1 group-hover:text-rose-500 uppercase">{labels.photo}</span>
+                      </>
+                    )}
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                      <Camera size={16} />
+                    </div>
+                  </div>
+                  <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    onChange={handleProfilePicChange} 
+                    className="hidden" 
+                    accept="image/*"
+                  />
+                </div>
+              )}
+
+              {authFlow === 'signup' && (
+                <>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.fullName}</label>
                         <div className="relative">
                           <User className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
                           <input 
@@ -367,70 +479,111 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
                     </>
                   )}
 
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.email}</label>
-                    <div className="relative">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                      <input 
-                        type="email" 
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="name@example.com"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex justify-between items-center px-1">
-                      <label className="text-[10px] text-gray-500 font-bold uppercase">{labels.password}</label>
-                      <button 
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="text-[10px] text-gray-500 hover:text-white transition-colors uppercase font-bold"
-                      >
-                        {showPassword ? <EyeOff size={12} className="inline mr-1" /> : <Eye size={12} className="inline mr-1" />}
-                        {showPassword ? labels.hide : labels.show}
-                      </button>
-                    </div>
-                    <div className="relative">
-                      <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-                      />
-                    </div>
-                  </div>
-
-                  {!isLogin && (
-                    <div className="space-y-1">
-                      <div className="flex justify-between items-center px-1">
-                        <label className="text-[10px] text-gray-500 font-bold uppercase">{labels.confirmPassword}</label>
-                        <button 
-                          type="button"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="text-[10px] text-gray-500 hover:text-white transition-colors uppercase font-bold"
-                        >
-                          {showConfirmPassword ? <EyeOff size={12} className="inline mr-1" /> : <Eye size={12} className="inline mr-1" />}
-                          {showConfirmPassword ? labels.hide : labels.show}
-                        </button>
+                  {authFlow !== 'phone' && (
+                    <>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.email}</label>
+                        <div className="relative">
+                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                          <input 
+                            type="email" 
+                            required
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            placeholder="name@example.com"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50 text-white"
+                          />
+                        </div>
                       </div>
-                      <div className="relative">
-                        <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
-                        <input 
-                          type={showConfirmPassword ? "text" : "password"} 
-                          required
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="••••••••"
-                          className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50"
-                        />
+
+                      <div className="space-y-1">
+                        <div className="flex justify-between items-center px-1">
+                          <label className="text-[10px] text-gray-500 font-bold uppercase">{labels.password}</label>
+                          <button 
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="text-[10px] text-gray-500 hover:text-white transition-colors uppercase font-bold"
+                          >
+                            {showPassword ? <EyeOff size={12} className="inline mr-1" /> : <Eye size={12} className="inline mr-1" />}
+                            {showPassword ? labels.hide : labels.show}
+                          </button>
+                        </div>
+                        <div className="relative">
+                          <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                          <input 
+                            type={showPassword ? "text" : "password"} 
+                            required
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            placeholder="••••••••"
+                            className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50 text-white"
+                          />
+                        </div>
                       </div>
+
+                      {authFlow === 'signup' && (
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-center px-1">
+                            <label className="text-[10px] text-gray-500 font-bold uppercase">{labels.confirmPassword}</label>
+                            <button 
+                              type="button"
+                              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                              className="text-[10px] text-gray-500 hover:text-white transition-colors uppercase font-bold"
+                            >
+                              {showConfirmPassword ? <EyeOff size={12} className="inline mr-1" /> : <Eye size={12} className="inline mr-1" />}
+                              {showConfirmPassword ? labels.hide : labels.show}
+                            </button>
+                          </div>
+                          <div className="relative">
+                            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                              type={showConfirmPassword ? "text" : "password"} 
+                              required
+                              value={confirmPassword}
+                              onChange={(e) => setConfirmPassword(e.target.value)}
+                              placeholder="••••••••"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50 text-white"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {authFlow === 'phone' && (
+                    <div className="space-y-4">
+                      {phoneStep === 'number' ? (
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.phoneNumber}</label>
+                          <div className="relative">
+                            <Smartphone className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                              type="tel" 
+                              required
+                              value={phoneNumber}
+                              onChange={(e) => setPhoneNumber(e.target.value)}
+                              placeholder="+1 234 567 890"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50 text-white"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          <label className="text-[10px] text-gray-500 font-bold uppercase ml-1">{labels.enterOtp}</label>
+                          <div className="relative">
+                            <ShieldCheck className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-500" size={18} />
+                            <input 
+                              type="text" 
+                              required
+                              maxLength={6}
+                              value={otp}
+                              onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                              placeholder="123456"
+                              className="w-full bg-white/5 border border-white/10 rounded-xl pl-12 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-rose-500/50 text-center tracking-[1em] text-lg font-black text-white"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -439,17 +592,22 @@ export default function Login({ onLogin }: { onLogin: (user: any) => void }) {
                     disabled={isLoading}
                     className={cn(
                       "w-full py-4 rounded-xl font-black flex items-center justify-center gap-2 mt-6 transition-all shadow-xl active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest text-sm",
-                      isLogin 
-                        ? "bg-rose-600 text-white hover:bg-rose-500 shadow-rose-600/20" 
-                        : "bg-cyan-600 text-white hover:bg-cyan-500 shadow-cyan-600/20"
+                      authFlow === 'signup' 
+                        ? "bg-cyan-600 text-white hover:bg-cyan-500 shadow-cyan-600/20" 
+                        : "bg-rose-600 text-white hover:bg-rose-500 shadow-rose-600/20"
                     )}
                   >
                     {isLoading ? (
-                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <span className="animate-pulse">...</span>
                     ) : (
                       <>
-                        {isLogin ? <LogIn size={20} /> : <UserPlus size={20} />}
-                        {isLogin ? labels.signInBtn : labels.signUpBtn}
+                        {authFlow === 'login' && <LogIn size={20} />}
+                        {authFlow === 'signup' && <UserPlus size={20} />}
+                        {authFlow === 'phone' && (phoneStep === 'number' ? <Smartphone size={20} /> : <Check size={20} />)}
+                        
+                        {authFlow === 'login' && labels.signInBtn}
+                        {authFlow === 'signup' && labels.signUpBtn}
+                        {authFlow === 'phone' && (phoneStep === 'number' ? labels.sendCode : labels.verifyCode)}
                       </>
                     )}
                   </button>

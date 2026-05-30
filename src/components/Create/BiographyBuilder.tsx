@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Trash2, Edit3, Sparkles, BookOpen, Image as ImageIcon, Camera, Upload, ChevronRight, ChevronDown, ChevronUp, Globe } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { generateBiographyChapter, generateBiographyTribute } from '../../services/ai';
+import { generateBiographyDraft } from '../../services/geminiService';
 import { translateUI, translateBiography } from '../../services/translationService';
 
 interface Chapter {
@@ -48,6 +49,7 @@ const DEFAULT_LABELS = {
   chaptersTitle: 'Biography Chapters',
   chapterPlaceholder: 'Chapter Title...',
   chapterContentPlaceholder: 'Tell this part of your story...',
+  biographyTitlePlaceholder: 'Enter Biography Title (e.g. The Untold Story of...)',
   addChapter: 'Add More Chapters',
   picturesTitle: 'Memorable Pictures',
   addPictures: 'Add Pictures',
@@ -62,13 +64,19 @@ const DEFAULT_LABELS = {
   addTributes: 'Add Final Tributes',
   publishBtn: 'Publish to Main Feed',
   publishAlertText: 'Biography published! Your content is perfectly sequence-locked in the order you arranged.',
-  aiSyncing: 'AI Localizing Biography...'
+  aiSyncing: 'Archive Synchronized'
 };
 
 import { useToast } from '../../context/ToastContext';
+import { handleFirestoreError, OperationType } from '../../lib/firestoreErrorHandler';
+import { useUser } from '../../context/UserContext';
+import { db } from '../../lib/firebase';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 
 export default function BiographyBuilder({ lang, setLang }: { lang: string; setLang: (l: string) => void }) {
   const { showToast } = useToast();
+  const { user, profile } = useUser();
+  const [biographyTitle, setBiographyTitle] = useState('');
   const [coverImage, setCoverImage] = useState<string | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([
     { title: 'Early Life', content: '' }
@@ -79,6 +87,8 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
   ]);
   const [isLoading, setIsLoading] = useState(false);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
+  const [aiDraftPrompt, setAiDraftPrompt] = useState('');
   const [labels, setLabels] = useState(DEFAULT_LABELS);
 
   const INITIAL_CHAPTERS = [{ title: 'Early Life', content: '' }];
@@ -127,6 +137,8 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
           reader.readAsDataURL(file);
         });
       }
+      // Reset input value so selecting the same files again triggers change event
+      e.target.value = '';
     }
   };
 
@@ -207,19 +219,24 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
         updateContributor(tributeIndex, contributorIndex, 'image', reader.result as string);
       };
       reader.readAsDataURL(file);
+      // Reset input value so selecting the same file again triggers change event
+      e.target.value = '';
     }
   };
 
   const generateChapterExpansion = async (index: number) => {
     if (!chapters[index].title) return showToast('Please enter a chapter title first.', 'warning');
     setIsLoading(true);
+    let cumulativeContent = '';
     try {
-      const expandedContent = await generateBiographyChapter({
+      await generateBiographyChapter({
         title: chapters[index].title,
         content: chapters[index].content,
         language: lang
+      }, (chunk) => {
+        // chunk is the full text so far from processable in ai.ts
+        updateChapter(index, 'content', chunk);
       });
-      updateChapter(index, 'content', expandedContent);
       showToast('Chapter expanded successfully!', 'success');
     } catch (error) {
       console.error(error);
@@ -234,13 +251,16 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
       return showToast('Please enter a tribute title or some notes first.', 'warning');
     }
     setIsLoading(true);
+    let cumulativeContent = '';
     try {
-      const expandedContent = await generateBiographyTribute({
+      await generateBiographyTribute({
         title: tributes[index].title,
         content: tributes[index].content,
         language: lang
+      }, (chunk) => {
+        // chunk is the full text so far from processable in ai.ts
+        updateTribute(index, 'content', chunk);
       });
-      updateTribute(index, 'content', expandedContent);
       showToast('Tribute expanded successfully!', 'success');
     } catch (error) {
       console.error(error);
@@ -250,21 +270,69 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
     }
   };
 
-  const handlePublish = () => {
-    const fullBiography = {
-      cover: coverImage,
-      sections: [
-        ...chapters.map((c, i) => ({ type: 'chapter', order: i, ...c })),
-        { type: 'gallery', images: memorableImages },
-        ...tributes.map((t, i) => ({ type: 'tribute', order: i, ...t }))
-      ],
-      metadata: {
-        publishedAt: new Date().toISOString()
+  const generateDraft = async () => {
+    if (!aiDraftPrompt.trim()) return showToast('Please enter some life facts first.', 'warning');
+    setIsGeneratingDraft(true);
+    try {
+      const draft = await generateBiographyDraft(profile?.displayName || 'Legacy Builder', aiDraftPrompt, lang);
+      if (draft.chapters && draft.chapters.length > 0) {
+        setBiographyTitle(draft.biographyTitle || '');
+        setChapters(draft.chapters);
+        showToast('AI Draft generated successfully!', 'success');
       }
-    };
+    } catch (error) {
+      console.error(error);
+      showToast('Preparation in progress. You can continue writing manually.', 'info');
+    } finally {
+      setIsGeneratingDraft(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!user) {
+      showToast('You must be logged in to publish.', 'error');
+      return;
+    }
     
-    console.log("Publishing Ordered Biography:", fullBiography);
-    showToast(labels.publishAlertText, 'success');
+    setIsLoading(true);
+    try {
+      const titleToUse = biographyTitle.trim() || `The Biography of ${profile?.displayName || 'Legacy Builder'}`;
+      const fullWork = `## ${titleToUse}\n\nChapters:\n\n${chapters.map(c => `### ${c.title}\n${c.content}`).join('\n\n')}\n\nTributes:\n\n${tributes.map(t => `### ${t.title}\n${t.content}`).join('\n\n')}`;
+
+      const docRef = await addDoc(collection(db, 'posts'), {
+        authorId: user.uid,
+        authorName: profile?.displayName || user.displayName || 'Legacy Builder',
+        authorPhotoURL: profile?.photoURL || user.photoURL || '',
+        desc: titleToUse,
+        fullWork: fullWork,
+        tags: '#biography #legacy',
+        genre: 'Biography',
+        music: 'Original Sound - AI',
+        likesCount: 1,
+        commentsCount: 0,
+        reactionCounts: { like: 1 },
+        color: 'from-amber-600 to-amber-900',
+        coverImage: coverImage,
+        profilePicture: coverImage,
+        images: memorableImages,
+        tributes: tributes,
+        chapters: chapters,
+        createdAt: serverTimestamp()
+      });
+
+      // Auto-like by author
+      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+        userId: user.uid,
+        type: 'like',
+        createdAt: serverTimestamp()
+      });
+
+      showToast(labels.publishAlertText, 'success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'posts');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -286,7 +354,59 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
         )}
       </AnimatePresence>
 
-      <div className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-4">
+      <div className="space-y-6">
+        <div className="bg-white/5 p-8 rounded-[2.5rem] border border-cyan-500/20 space-y-4 relative overflow-hidden group">
+          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:opacity-20 transition-opacity">
+            <Sparkles size={120} className="text-cyan-500" />
+          </div>
+          <div className="relative z-10 space-y-4">
+             <div className="flex items-center gap-2 text-cyan-500">
+               <Sparkles size={20} />
+               <h3 className="text-xs font-black uppercase tracking-[0.3em]">AI Biography Architect</h3>
+             </div>
+             <p className="text-sm text-gray-400 font-light italic leading-relaxed">
+               Share 3 key milestones or life facts, and I'll architect a soulful narrative draft for you to refine.
+             </p>
+             <textarea 
+               value={aiDraftPrompt}
+               onChange={(e) => setAiDraftPrompt(e.target.value)}
+               placeholder="Example: Born in Paris 1985, studied architecture in Tokyo, moved to NY to start a sustainable design firm..."
+               className="w-full bg-black/40 border border-white/10 rounded-[1.5rem] p-4 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500/50 min-h-[100px] transition-all"
+             />
+             <button 
+               onClick={generateDraft}
+               disabled={isGeneratingDraft}
+               className="w-full py-4 bg-cyan-500 text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-2xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-cyan-500/20 flex items-center justify-center gap-3 disabled:opacity-50"
+             >
+               {isGeneratingDraft ? (
+                 <>
+                   <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
+                     <Sparkles size={16} />
+                   </motion.div>
+                   Manifesting Story...
+                 </>
+               ) : (
+                 <>
+                   <Sparkles size={16} />
+                   Architect Smart Biography
+                 </>
+               )}
+             </button>
+          </div>
+        </div>
+
+        <div className="bg-white/5 border-b border-white/10 pb-6 mb-8">
+          <label className="text-[10px] font-bold text-gray-500 uppercase tracking-[0.2em] ml-2 mb-2 block">Biography Title</label>
+          <input
+            type="text"
+            value={biographyTitle}
+            onChange={(e) => setBiographyTitle(e.target.value)}
+            placeholder={labels.biographyTitlePlaceholder}
+            className="w-full bg-transparent border-none text-3xl font-serif italic text-white focus:outline-none placeholder:text-gray-700"
+          />
+        </div>
+
+        <div className="bg-white/5 p-6 rounded-3xl border border-white/10 space-y-4">
         <label className="block">
           <div className="flex items-center gap-2 mb-2 ml-1">
             <Globe size={14} className="text-rose-500" />
@@ -637,5 +757,6 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
         onChange={handleContributorPhoto} 
       />
     </div>
+  </div>
   );
 }

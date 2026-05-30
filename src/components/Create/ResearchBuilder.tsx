@@ -1,263 +1,327 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, ArrowLeft, Save, Globe, FileText, ChevronRight, PenTool, Edit3, Plus, Trash2, ListTree, BrainCircuit, X, Upload, Table, Database } from 'lucide-react';
-import { RESEARCH_STRUCTURE, REFERENCE_STYLES } from '../../constants';
+import { 
+  FileText, Upload, Save, Globe, Trash2, CheckCircle2, 
+  Clock, BarChart3, ChevronRight, Check, Eye, BookOpen, 
+  Info, Sparkles, RefreshCcw, Paperclip, X, Plus
+} from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import { REFERENCE_STYLES } from '../../constants';
 import { cn } from '../../lib/utils';
-import { generateResearchChapter, generateResearchDataset } from '../../services/ai';
-import { translateUI, translateResearch } from '../../services/translationService';
+import { db, storage } from '../../lib/firebase';
+import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
+import { 
+  collection, addDoc, serverTimestamp, doc, 
+  updateDoc, increment, setDoc 
+} from 'firebase/firestore';
+import { useUser } from '../../context/UserContext';
+import { useToast } from '../../context/ToastContext';
+import { handleFirestoreError, OperationType } from '../../lib/firestoreErrorHandler';
 
-const DEFAULT_LABELS = {
-  researchTitle: 'Research Title',
-  requiredLabel: 'REQUIRED',
-  placeholderTitle: 'Impact of Quantum Computing on Cybersecurity...',
-  styleLabel: 'Academic Style',
-  langLabel: 'Research Language',
-  progressLabel: 'Chapter Progress',
-  sectionLabel: 'SECTION',
-  documentationLabel: 'Research Documentation',
-  notesLabel: 'Your Research Notes',
-  addNoteBtn: 'Add Note',
-  aiSyncBtn: 'AI Sync',
-  shortcutLabel: 'Ctrl + Enter to save',
-  noNotesLabel: 'No research notes recorded',
-  subtopicsLabel: 'Subtopics & References',
-  subtopicPlaceholder: 'Type subtopic & hit Enter...',
-  noSubtopicsLabel: 'No specific subtopics added yet.',
-  datasetTitle: 'Synthetic Research Dataset',
-  summaryLabel: 'AI Summary of Mock Data',
-  generateDataBtn: 'Generate Synthetic Data',
-  adoptQuestionnaireBtn: 'AI Adopt/Adapt Questionnaire',
-  aiGenerationBtn: 'AI Generation',
-  generateNewBtn: 'Generate New Version',
-  exportBtn: 'Export Research',
-  noDataExport: 'No research data to export!',
-  confirmClear: 'Are you sure you want to clear all research notes and results? This cannot be undone.',
-  emptyDesc: 'Provide notes or subtopics above, then let AI build your chapter blueprint.',
-  protocolLabel: 'Questionnaire Protocol',
-  protocolDesc: 'AI will auto-generate a scale, citing the original source. It will prioritize Adopted instruments to bypass validity/reliability testing requirements.',
-  aiSyncing: 'AI Localizing Research...',
-  aiSync: 'AI Sync',
-  aiDataSummary: 'AI Summary of Mock Data',
-  generatedSources: 'Generated Sources',
-  drafting: 'Drafting...'
-};
-
-const RESEARCH_LANGUAGES = [
-  'English', 'French', 'Spanish', 'German', 'Italian', 
-  'Portuguese', 'Dutch', 'Russian', 'Chinese (Mandarin)', 'Chinese (Cantonese)',
-  'Japanese', 'Korean', 'Arabic', 'Hindi', 'Bengali', 
-  'Punjabi', 'Tamil', 'Telugu', 'Turkish', 'Vietnamese',
-  'Thai', 'Greek', 'Hebrew', 'Swahili', 'Amharic',
-  'Yoruba', 'Hausa', 'Indonesian', 'Polish', 'Ukrainian',
-  'Romanian', 'Hungarian', 'Czech', 'Swedish', 'Norwegian',
-  'Danish', 'Finnish', 'Slovak', 'Bulgarian', 'Serbian',
-  'Croatian', 'Slovenian', 'Lithuanian', 'Latvian', 'Estonian',
-  'Icelandic', 'Persian', 'Urdu', 'Marathi', 'Gujarati',
-  'Malayalam', 'Kannada', 'Burmese', 'Khmer', 'Lao',
-  'Malay', 'Tagalog', 'Zulu', 'Xhosa', 'Afrikaans',
-  'Nepali', 'Sinhalese', 'Mongolian', 'Kazakh', 'Uzbek',
-  'Azerbaijani', 'Georgian', 'Armenian', 'Pashto', 'Kurdish'
+const THEMES = [
+  { id: 'slate', label: 'Oxford Slate', color: 'from-slate-900 via-zinc-900 to-slate-950', border: 'border-slate-500/30', bgAccent: 'bg-slate-500/20', textAccent: 'text-slate-400' },
+  { id: 'crimson', label: 'Stanford Crimson', color: 'from-rose-950 via-zinc-900 to-rose-950', border: 'border-rose-500/30', bgAccent: 'bg-rose-500/20', textAccent: 'text-rose-400' },
+  { id: 'emerald', label: 'Cambridge Ivy', color: 'from-emerald-950 via-neutral-900 to-emerald-950', border: 'border-emerald-500/30', bgAccent: 'bg-emerald-500/20', textAccent: 'text-emerald-400' },
+  { id: 'indigo', label: 'MIT Velvet', color: 'from-indigo-950 via-zinc-900 to-indigo-950', border: 'border-indigo-500/30', bgAccent: 'bg-indigo-500/20', textAccent: 'text-indigo-400' },
+  { id: 'dark-core', label: 'Dark Core', color: 'from-black via-zinc-900 to-black', border: 'border-white/10', bgAccent: 'bg-white/5', textAccent: 'text-gray-300' }
 ];
 
-import { useToast } from '../../context/ToastContext';
+const DEPARTMENTS = [
+  'Medicine & Biological Sciences',
+  'Computer Science & Engineering',
+  'Physics & Mathematics',
+  'Environmental & Earth Sciences',
+  'Sociology & Humanities',
+  'Business, Finance & Economics',
+  'Interdisciplinary Studies'
+];
 
-export default function ResearchBuilder({ lang, setLang }: { lang: string; setLang: (l: string) => void }) {
+export default function ResearchBuilder({ lang, setLang }: { lang?: string; setLang?: (l: string) => void }) {
   const { showToast } = useToast();
+  const { user, profile } = useUser();
+  
+  // Input States
   const [title, setTitle] = useState('');
+  const [abstract, setAbstract] = useState('');
   const [style, setStyle] = useState('APA');
-  const [currentChapterIdx, setCurrentChapterIdx] = useState(0);
-  const [currentSectionIdx, setCurrentSectionIdx] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [results, setResults] = useState<Record<string, { content: string; citations: string[] }>>({});
-  const [researchNotes, setResearchNotes] = useState<Record<string, string[]>>({});
-  const [subtopics, setSubtopics] = useState<Record<string, string[]>>({});
-  const [isAddingSubtopic, setIsAddingSubtopic] = useState(false);
-  const [newSubtopic, setNewSubtopic] = useState('');
-  const [isAddingNote, setIsAddingNote] = useState(false);
-  const [newNote, setNewNote] = useState('');
-  const [dataset, setDataset] = useState<{ description: string; headers: string[]; rows: string[][]; summaryStatistics: string } | null>(null);
+  const [language, setLanguage] = useState(lang || 'English');
+  const [department, setDepartment] = useState(DEPARTMENTS[1]);
+  const [selectedThemeId, setSelectedThemeId] = useState('slate');
+  const [manuscript, setManuscript] = useState('');
+  const [mainObjective, setMainObjective] = useState('');
+  const [specificObjectives, setSpecificObjectives] = useState<string[]>([]);
+  const [isGeneratingObjectives, setIsGeneratingObjectives] = useState(false);
+  const [isGeneratingInstrument, setIsGeneratingInstrument] = useState(false);
   const [isGeneratingData, setIsGeneratingData] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [labels, setLabels] = useState(DEFAULT_LABELS);
 
-  React.useEffect(() => {
-    const applyTranslation = async () => {
-      if (lang !== 'English' && RESEARCH_LANGUAGES.includes(lang)) {
-        setIsTranslating(true);
-        const translatedUI = await translateUI(DEFAULT_LABELS, lang);
-        if (translatedUI) setLabels(translatedUI);
-
-        const translatedResults = await translateResearch(results, lang);
-        if (translatedResults) setResults(translatedResults);
-
-        setIsTranslating(false);
-      } else {
-        setLabels(DEFAULT_LABELS);
-      }
-    };
-    applyTranslation();
+  // Sync with global language changes if any
+  useEffect(() => {
+    if (lang) {
+      setLanguage(lang);
+    }
   }, [lang]);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const currentChapter = RESEARCH_STRUCTURE[currentChapterIdx];
-  const currentSection = currentChapter.sections[currentSectionIdx];
-  const totalChapters = RESEARCH_STRUCTURE.length;
-  const storageKey = `${currentChapter.chapter}-${currentSection}`;
-
-  const handleNext = () => {
-    if (currentSectionIdx < currentChapter.sections.length - 1) {
-      setCurrentSectionIdx(prev => prev + 1);
-    } else if (currentChapterIdx < totalChapters - 1) {
-      setCurrentChapterIdx(prev => prev + 1);
-      setCurrentSectionIdx(0);
-    }
-  };
-
-  const handleBack = () => {
-    if (currentSectionIdx > 0) {
-      setCurrentSectionIdx(prev => prev - 1);
-    } else if (currentChapterIdx > 0) {
-      setCurrentChapterIdx(prev => prev - 1);
-      setCurrentSectionIdx(RESEARCH_STRUCTURE[currentChapterIdx - 1].sections.length - 1);
-    }
-  };
-
-  const handleGenerate = async (useNotes = false) => {
-    if (!title) return showToast('Please enter a research title', 'error');
-    setIsLoading(true);
-    try {
-      const notes = useNotes ? (researchNotes[storageKey] || []).join('\n\n') : '';
-      const topicList = subtopics[storageKey] || [];
-      
-      const data = await generateResearchChapter({
-        title,
-        chapter: currentChapter.chapter,
-        section: currentSection,
-        style,
-        language: lang,
-        previousContext: Object.values(results).map((r: any) => r.content.substring(0, 200)).join('\n'),
-        notes: notes + (topicList.length > 0 ? `\nFocus on these subtopics: ${topicList.join(', ')}` : '')
-      });
-      setResults(prev => ({ ...prev, [storageKey]: data }));
-      showToast('Chapter generated successfully!', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast('Generation failed. Please try again.', 'error');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleAddSubtopic = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (newSubtopic.trim()) {
-      setSubtopics(prev => ({
-        ...prev,
-        [storageKey]: [...(prev[storageKey] || []), newSubtopic.trim()]
-      }));
-      setNewSubtopic('');
-      setIsAddingSubtopic(false);
-    }
-  };
-
-  const handleAddNote = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (newNote.trim()) {
-      setResearchNotes(prev => ({
-        ...prev,
-        [storageKey]: [...(prev[storageKey] || []), newNote.trim()]
-      }));
-      setNewNote('');
-      setIsAddingNote(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach((file: File) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const content = event.target?.result as string;
-          setResearchNotes(prev => ({
-            ...prev,
-            [storageKey]: [...(prev[storageKey] || []), `[File: ${file.name}]\n${content}`]
-          }));
-        };
-        reader.readAsText(file);
-      });
-    }
-  };
-
-  const removeNote = (idx: number) => {
-    setResearchNotes(prev => ({
-      ...prev,
-      [storageKey]: prev[storageKey].filter((_, i) => i !== idx)
-    }));
-  };
-
-  const removeSubtopic = (idx: number) => {
-    setSubtopics(prev => ({
-      ...prev,
-      [storageKey]: prev[storageKey].filter((_, i) => i !== idx)
-    }));
-  };
-
-  const handleGenerateDataset = async () => {
-    if (!title) return showToast('Please enter a research title', 'error');
-    setIsGeneratingData(true);
-    try {
-      const data = await generateResearchDataset({
-        title,
-        objectives: subtopics[storageKey] || ["Investigate key trends", "Analyze participant behavior"],
-        variables: ["Age", "Gender", "ExperienceLevel", "SatisfactionScore", "Engagement"],
-        language: lang
-      });
-      setDataset(data);
-      showToast('Synthetic dataset generated!', 'success');
-    } catch (error) {
-      console.error(error);
-      showToast('Dataset generation failed.', 'error');
-    } finally {
-      setIsGeneratingData(false);
-    }
-  };
-
-  const handleExport = async () => {
-    if (Object.keys(results).length === 0) return showToast(labels.noDataExport, 'warning');
-    setIsExporting(true);
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    // Create a text blob representing the research
-    const content = Object.entries(results).map(([key, val]) => {
-      const data = val as { content: string; citations: string[] };
-      const [chapter, section] = key.split('-');
-      return `--- ${chapter}: ${section} ---\n\n${data.content}\n\nCitations:\n${data.citations.map(c => `- ${c}`).join('\n')}\n\n`;
-    }).join('\n');
-
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${title.replace(/\s+/g, '_')}_Research_Export.txt`;
-    link.click();
-    
-    URL.revokeObjectURL(url);
-    setIsExporting(false);
-  };
-
+  
+  // Publication states
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  
+  // File Upload states
+  const [researchAssets, setResearchAssets] = useState<{url: string, name: string, type: string}[]>(() => {
+    const saved = localStorage.getItem('academic_draft_assets');
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
-  const clearAll = () => {
-    setResults({});
-    setResearchNotes({});
-    setSubtopics({});
-    setDataset(null);
+  useEffect(() => {
+    localStorage.setItem('academic_draft_assets', JSON.stringify(researchAssets));
+  }, [researchAssets]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load drafts on mounting
+  useEffect(() => {
+    const savedTitle = localStorage.getItem('academic_draft_title');
+    const savedAbstract = localStorage.getItem('academic_draft_abstract');
+    const savedManuscript = localStorage.getItem('academic_draft_manuscript');
+    const savedStyle = localStorage.getItem('academic_draft_style');
+    const savedLanguage = localStorage.getItem('academic_draft_language');
+    const savedDepartment = localStorage.getItem('academic_draft_department');
+    const savedTheme = localStorage.getItem('academic_draft_theme');
+
+    if (savedTitle) setTitle(savedTitle);
+    if (savedAbstract) setAbstract(savedAbstract);
+    if (savedManuscript) setManuscript(savedManuscript);
+    if (savedStyle && REFERENCE_STYLES.includes(savedStyle)) setStyle(savedStyle);
+    if (savedLanguage) setLanguage(savedLanguage);
+    if (savedDepartment && DEPARTMENTS.includes(savedDepartment)) setDepartment(savedDepartment);
+    if (savedTheme && THEMES.some(t => t.id === savedTheme)) setSelectedThemeId(savedTheme);
+  }, []);
+
+  // Sync draft edits to local storage
+  useEffect(() => {
+    localStorage.setItem('academic_draft_title', title);
+  }, [title]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_abstract', abstract);
+  }, [abstract]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_manuscript', manuscript);
+  }, [manuscript]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_style', style);
+  }, [style]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_language', language);
+  }, [language]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_department', department);
+  }, [department]);
+
+  useEffect(() => {
+    localStorage.setItem('academic_draft_theme', selectedThemeId);
+  }, [selectedThemeId]);
+
+  // Analytics helper functions
+  const wordCount = manuscript.trim() === '' ? 0 : manuscript.trim().split(/\s+/).filter(Boolean).length;
+  const charCount = manuscript.length;
+  const paragraphCount = manuscript.trim() === '' ? 0 : manuscript.split(/\n\s*\n/).filter(p => p.trim() !== '').length;
+  const readingTime = Math.max(1, Math.ceil(wordCount / 220));
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = () => {
+    setIsDragging(false);
+  };
+
+  const uploadFile = async (file: File) => {
+    if (!user) {
+      showToast('You must be logged in to upload files.', 'error');
+      return;
+    }
+    
+    // Support pdf, docx, txt, md, images
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
+    const isDoc = ['.pdf', '.docx', '.txt', '.md'].includes(ext);
+    
+    if (!isImage && !isDoc) {
+      showToast('Unsupported file type. Use images (JPG, PNG) or documents (PDF, DOCX, TXT, MD).', 'warning');
+      return;
+    }
+
+    try {
+      const storageRef = ref(storage, `research_assets/${user.uid}/${Date.now()}-${file.name}`);
+      const uploadTask = uploadBytesResumable(storageRef, file);
+
+      uploadTask.on('state_changed', 
+        (snapshot) => {
+          const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
+          setUploadProgress(progress);
+        }, 
+        (error) => {
+          console.error("Upload error:", error);
+          showToast('Upload failed.', 'error');
+          setUploadProgress(null);
+        }, 
+        async () => {
+          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const newAsset = {
+            url: downloadURL,
+            name: file.name,
+            type: isImage ? 'image' : 'document'
+          };
+          setResearchAssets(prev => [...prev, newAsset]);
+          setUploadProgress(null);
+          showToast(`"${file.name}" attached successfully!`, 'success');
+          
+          if (!title.trim()) {
+            const cleanName = file.name.replace(/\.[^/.]+$/, "");
+            setTitle(cleanName);
+          }
+        }
+      );
+    } catch (err) {
+      console.error(err);
+      showToast('Error initializing file upload.', 'error');
+    }
+  };
+
+  const removeAsset = (index: number) => {
+    setResearchAssets(prev => prev.filter((_, i) => i !== index));
+    showToast('Asset removed.', 'info');
+  };
+
+  const handleFileLoad = (file: File) => {
+    const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+    if ((ext === '.txt' || ext === '.md') && !manuscript.trim()) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const content = event.target?.result as string;
+        setManuscript(content);
+        uploadFile(file);
+      };
+      reader.readAsText(file);
+    } else {
+      uploadFile(file);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      files.forEach(file => handleFileLoad(file));
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      files.forEach(file => handleFileLoad(file));
+      e.target.value = '';
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!user) {
+      showToast('You must be logged in to publish.', 'error');
+      return;
+    }
+    if (!title.trim()) {
+      showToast('A distinct working title is required for publication.', 'warning');
+      return;
+    }
+    if (!abstract.trim()) {
+      showToast('Please provide an Abstract / Executive Summary.', 'warning');
+      return;
+    }
+    if (!manuscript.trim() && researchAssets.length === 0) {
+      showToast('Provide manuscript text or attach research files to publish.', 'warning');
+      return;
+    }
+
+    setIsPublishing(true);
+    try {
+      const chosenTheme = THEMES.find(t => t.id === selectedThemeId) || THEMES[0];
+      
+      // We construct traditional full markdown content for the reader
+      const objectivesSection = mainObjective 
+        ? `\n\n### Research Objectives\n**Main Objective:** ${mainObjective}\n\n**Specific Objectives:**\n${specificObjectives.map((o, i) => `${i+1}. ${o}`).join('\n')}`
+        : '';
+      
+      const fullWork = `## ${title}\n\n**Academic Discipline:** ${department} \n**Scientific Style:** ${style} \n**Language:** ${language}${objectivesSection}\n\n### Abstract\n${abstract}\n\n---\n\n### Research Manuscript\n${manuscript}`;
+
+      const docRef = await addDoc(collection(db, 'posts'), {
+        authorId: user.uid,
+        authorName: profile?.displayName || user.displayName || 'Researcher Anonymous',
+        desc: `[Abstract] ${abstract.substring(0, 240)}${abstract.length > 240 ? '...' : ''}`,
+        fullWork,
+        tags: `#research #academic #${style.toLowerCase()} #${department.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+        genre: 'Academic',
+        music: 'Scientific Focus',
+        likesCount: 1,
+        commentsCount: 0,
+        reactionCounts: { like: 1 },
+        color: chosenTheme.color,
+        researchAssets,
+        mainObjective,
+        specificObjectives,
+        createdAt: serverTimestamp()
+      });
+
+      // Auto-like for the publishing author
+      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+        userId: user.uid,
+        type: 'like',
+        createdAt: serverTimestamp()
+      });
+
+      // Increment works counter on author profile
+      try {
+        const userRef = doc(db, 'users', user.uid);
+        await updateDoc(userRef, { worksCount: increment(1) });
+      } catch (profileErr) {
+        console.error('Error incrementing user worksCount:', profileErr);
+      }
+
+      setIsPublished(true);
+      showToast('Academic research uploaded and published successfully!', 'success');
+      
+      // Clear draft states
+      clearDraft();
+    } catch (err) {
+      console.error(err);
+      handleFirestoreError(err, OperationType.CREATE, 'posts');
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const clearDraft = () => {
+    setTitle('');
+    setAbstract('');
+    setManuscript('');
+    setResearchAssets([]);
+    setUploadProgress(null);
+    localStorage.removeItem('academic_draft_title');
+    localStorage.removeItem('academic_draft_abstract');
+    localStorage.removeItem('academic_draft_manuscript');
+    localStorage.removeItem('academic_draft_assets');
     setShowClearConfirm(false);
   };
 
-  const currentResult = results[storageKey];
+  const chosenTheme = THEMES.find(t => t.id === selectedThemeId) || THEMES[0];
 
   return (
     <div className="space-y-6">
@@ -276,21 +340,21 @@ export default function ResearchBuilder({ lang, setLang }: { lang: string; setLa
               exit={{ scale: 0.9, y: 20 }}
               className="bg-zinc-900 border border-white/10 p-8 rounded-[2.5rem] max-w-sm w-full text-center space-y-6 shadow-2xl"
             >
-              <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center text-rose-500 mx-auto">
-                <Trash2 size={32} />
+              <div className="w-16 h-16 bg-rose-500/10 rounded-full flex items-center justify-center text-rose-500 mx-auto border border-rose-500/20">
+                <Trash2 size={24} />
               </div>
               <div className="space-y-2">
-                <h3 className="text-xl font-bold uppercase tracking-widest text-white">Clear All?</h3>
-                <p className="text-xs text-gray-500 leading-relaxed italic">
-                  {labels.confirmClear}
+                <h3 className="text-xl font-bold uppercase tracking-widest text-white">Reset Form?</h3>
+                <p className="text-xs text-gray-400 leading-relaxed italic">
+                  This will securely erase your current title, abstract, and manuscript draft. This action is final and cannot be undone.
                 </p>
               </div>
               <div className="flex flex-col gap-3 pt-2">
                 <button 
-                  onClick={clearAll}
+                  onClick={clearDraft}
                   className="w-full py-4 bg-rose-500 text-white rounded-2xl font-bold text-sm uppercase tracking-widest hover:bg-rose-600 transition-colors"
                 >
-                  Confirm Clear
+                  Clear Draft
                 </button>
                 <button 
                   onClick={() => setShowClearConfirm(false)}
@@ -304,479 +368,489 @@ export default function ResearchBuilder({ lang, setLang }: { lang: string; setLa
         )}
       </AnimatePresence>
 
-      {/* AI Translating Indicator */}
-      <AnimatePresence>
-        {isTranslating && (
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8, y: -20 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.8, y: -20 }}
-            className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-black/60 backdrop-blur-xl px-6 py-2 rounded-full border border-cyan-500/30 flex items-center gap-3 shadow-2xl"
-          >
-            <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
-              <Sparkles size={16} className="text-cyan-500" />
-            </motion.div>
-            <span className="text-[10px] uppercase font-bold tracking-[0.2em] text-white">{labels.aiSyncing}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <div className="space-y-4">
-        <label className="block">
-          <div className="flex items-center gap-1.5 mb-1 ml-1">
-             <span className="text-xs uppercase tracking-widest text-gray-400 font-semibold">{labels.researchTitle}</span>
-             <span className="text-[8px] bg-rose-500/20 text-rose-400 px-1.5 py-0.5 rounded-full font-bold">{labels.requiredLabel}</span>
+      <div className="bg-white/5 border border-white/10 p-6 md:p-8 rounded-[2rem] space-y-3">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 flex items-center justify-center text-cyan-400 border border-cyan-500/20">
+            <BookOpen size={20} />
           </div>
-          <input
-            type="text"
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder={labels.placeholderTitle}
-            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all font-serif italic text-lg text-cyan-400"
-          />
-        </label>
-
-        <div className="flex gap-4 items-center">
-          <div className="flex-1">
-            <span className="text-xs uppercase tracking-widest text-gray-400 font-semibold ml-1">{labels.styleLabel}</span>
-            <select
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              className="w-full mt-1.5 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none text-sm"
-            >
-              {REFERENCE_STYLES.map(s => <option key={s} value={s} className="bg-black">{s}</option>)}
-            </select>
-          </div>
-          <div className="flex-1">
-            <span className="text-xs uppercase tracking-widest text-gray-400 font-semibold ml-1">{labels.langLabel}</span>
-            <select
-              value={lang}
-              onChange={(e) => setLang(e.target.value)}
-              className="w-full mt-1.5 bg-white/5 border border-white/10 rounded-xl px-4 py-3 focus:outline-none text-sm text-cyan-400 font-bold"
-            >
-              {RESEARCH_LANGUAGES.map(l => <option key={l} value={l} className="bg-black">{l}</option>)}
-            </select>
-          </div>
+          <h2 className="text-xl font-serif italic text-white">Academic Submission Workspace</h2>
         </div>
-
-        <div className="flex-1 mt-4">
-          <span className="text-xs uppercase tracking-widest text-gray-400 font-semibold ml-1">{labels.progressLabel}</span>
-          <div className="h-10 mt-1.5 bg-white/5 border border-white/10 rounded-xl px-4 flex items-center justify-between text-[10px] text-gray-500 font-bold uppercase tracking-tighter">
-            <span>CH {currentChapterIdx + 1}/{totalChapters}</span>
-            <div className="flex gap-0.5">
-              {RESEARCH_STRUCTURE.map((_, i) => (
-                <div key={i} className={cn("w-2 h-1 rounded-full", i <= currentChapterIdx ? "bg-cyan-500" : "bg-white/10")} />
-              ))}
-            </div>
-          </div>
-        </div>
+        <p className="text-xs text-gray-400 leading-relaxed max-w-2xl">
+          Publish complete, properly formatted scientific studies, articles, or abstracts to our academic timeline. Type or simple-upload your document manuscript below directly for pristine peer display.
+        </p>
       </div>
 
-      <div className="bg-white/5 rounded-3xl border border-white/10 overflow-hidden shadow-2xl">
-        <div className="bg-white/5 p-4 border-b border-white/10 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-             <div className="w-8 h-8 rounded-lg bg-rose-500/10 flex items-center justify-center text-rose-500">
-               <FileText size={18} />
-             </div>
-             <div>
-               <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none">{currentChapter.chapter}</h3>
-               <p className="text-lg font-serif italic mt-1 text-white">{currentSection}</p>
-             </div>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left Panel: Metadata */}
+        <div className="lg:col-span-5 space-y-6">
+          <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 space-y-5">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400 pb-2 border-b border-white/5">Research Metadata</h3>
+
+                {/* Title Input */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Research Working Title</label>
+                    <span className="text-[8px] bg-cyan-500/20 text-cyan-400 px-1.5 py-0.5 rounded-full font-bold">REQUIRED</span>
+                  </div>
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    placeholder="e.g. Impact of Quantum Computing on Financial Services..."
+                    className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 focus:outline-none focus:ring-1 focus:ring-cyan-500/50 text-sm font-serif italic text-white"
+                  />
+                </div>
+
+                {/* Sub-group Style / Language */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Academic Style</label>
+                    <select
+                      value={style}
+                      onChange={(e) => setStyle(e.target.value)}
+                      className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-xs text-gray-300 focus:outline-none"
+                    >
+                      {REFERENCE_STYLES.map(s => (
+                        <option key={s} value={s} className="bg-zinc-900">{s}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Research Language</label>
+                    <input
+                      type="text"
+                      value={language}
+                      onChange={(e) => setLanguage(e.target.value)}
+                      placeholder="e.g. English, French"
+                      className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-xs text-gray-300 focus:outline-none focus:ring-1 focus:ring-cyan-500/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Department */}
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1">Discipline Department</label>
+                  <select
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-xs text-gray-300 focus:outline-none"
+                  >
+                    {DEPARTMENTS.map(d => (
+                      <option key={d} value={d} className="bg-zinc-900">{d}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Paper Abstract / Summary */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center px-1">
+                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Abstract / Executive Summary</label>
+                    <span className="text-[8px] bg-cyan-500/10 text-cyan-400 px-1.5 py-0.5 rounded-full font-bold">REQUIRED</span>
+                  </div>
+                  <textarea
+                    value={abstract}
+                    onChange={(e) => setAbstract(e.target.value)}
+                    placeholder="Write a concise abstract outlining the background, methods, key findings, and implications (ideal summary to display)...."
+                    className="w-full h-36 bg-black/30 border border-white/10 rounded-xl p-4 text-xs text-gray-300 leading-relaxed focus:outline-none focus:ring-1 focus:ring-cyan-500/50 resize-none font-sans"
+                  />
+                  <p className="text-[9px] text-gray-500 text-right">Characters: {abstract.length}/500</p>
+                </div>
+
+                {/* AI Research Laboratory */}
+                <div className="pt-2 space-y-3">
+                  <div className="flex items-center gap-2 px-1">
+                    <Sparkles size={14} className="text-cyan-500" />
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500">AI Research Laboratory</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!title.trim()) return showToast('Please enter a research title first.', 'warning');
+                        setIsGeneratingObjectives(true);
+                        try {
+                          const { generateResearchChapter } = await import('../../services/ai');
+                          const data = await generateResearchChapter({
+                            title,
+                            chapter: 'Chapter 1: Introduction',
+                            section: 'Objectives of the Study',
+                            style,
+                            language
+                          });
+                          
+                          if (data.mainObjective || data.specificObjectives) {
+                            setMainObjective(data.mainObjective || '');
+                            setSpecificObjectives(data.specificObjectives || []);
+                            showToast('Objectives generated!', 'success');
+                            if (!manuscript.trim() && data.content) setManuscript(data.content);
+                          } else {
+                            showToast('Extraction failed.', 'warning');
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          showToast('AI failed.', 'error');
+                        } finally {
+                          setIsGeneratingObjectives(false);
+                        }
+                      }}
+                      disabled={isGeneratingObjectives || isGeneratingInstrument || isGeneratingData}
+                      className="py-3 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest text-cyan-400 flex flex-col items-center justify-center gap-1 hover:bg-cyan-500/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isGeneratingObjectives ? <RefreshCcw size={12} className="animate-spin" /> : <BookOpen size={12} />}
+                      Objectives
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!title.trim()) return showToast('Please enter a research title first.', 'warning');
+                        setIsGeneratingInstrument(true);
+                        try {
+                          const { generateResearchChapter } = await import('../../services/ai');
+                          const data = await generateResearchChapter({
+                            title,
+                            chapter: 'Chapter 3: Methodology',
+                            section: 'Instrument for Data Collection',
+                            style,
+                            language
+                          });
+                          
+                          if (data.content) {
+                            setManuscript(prev => prev + (prev ? '\n\n' : '') + data.content);
+                            showToast('Test / Questionnaire generated and appended!', 'success');
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          showToast('AI failed.', 'error');
+                        } finally {
+                          setIsGeneratingInstrument(false);
+                        }
+                      }}
+                      disabled={isGeneratingObjectives || isGeneratingInstrument || isGeneratingData}
+                      className="py-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest text-purple-400 flex flex-col items-center justify-center gap-1 hover:bg-purple-500/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isGeneratingInstrument ? <RefreshCcw size={12} className="animate-spin" /> : <FileText size={12} />}
+                      Test Gen
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!title.trim()) return showToast('Please enter a research title first.', 'warning');
+                        setIsGeneratingData(true);
+                        try {
+                          const { generateResearchDataset } = await import('../../services/ai');
+                          const data = await generateResearchDataset({
+                            title,
+                            objectives: specificObjectives,
+                            variables: ['Variable X', 'Variable Y'],
+                            language
+                          });
+                          
+                          if (data) {
+                            const table = `\n\n### Synthetic Research Dataset\n*${data.description}*\n\n| ${data.headers.join(' | ')} |\n| ${data.headers.map(() => '---').join(' | ')} |\n${data.rows.map(row => `| ${row.join(' | ')} |`).join('\n')}\n\n**Summary Statistics:** ${data.summaryStatistics}`;
+                            setManuscript(prev => prev + (prev ? '\n\n' : '') + table);
+                            showToast('Synthetic dataset generated and appended!', 'success');
+                          }
+                        } catch (err) {
+                          console.error(err);
+                          showToast('AI failed.', 'error');
+                        } finally {
+                          setIsGeneratingData(false);
+                        }
+                      }}
+                      disabled={isGeneratingObjectives || isGeneratingInstrument || isGeneratingData}
+                      className="py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest text-emerald-400 flex flex-col items-center justify-center gap-1 hover:bg-emerald-500/20 transition-all active:scale-95 disabled:opacity-50"
+                    >
+                      {isGeneratingData ? <RefreshCcw size={12} className="animate-spin" /> : <BarChart3 size={12} />}
+                      Simulator
+                    </button>
+                  </div>
+                  
+                  {mainObjective && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-3 p-4 bg-cyan-500/5 border border-cyan-500/20 rounded-2xl space-y-3"
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="text-[8px] font-black uppercase tracking-widest text-cyan-500">Main Research Objective</span>
+                        <button onClick={() => setMainObjective('')} className="text-gray-600 hover:text-white"><X size={10} /></button>
+                      </div>
+                      <p className="text-[11px] text-white font-serif italic italic">{mainObjective}</p>
+                      
+                      {specificObjectives.length > 0 && (
+                        <div className="space-y-2 pt-2 border-t border-white/5">
+                          <span className="text-[8px] font-black uppercase tracking-widest text-gray-500">Specific Objectives</span>
+                          <ul className="space-y-1.5">
+                            {specificObjectives.map((obj, i) => (
+                              <li key={i} className="text-[10px] text-gray-300 flex gap-2">
+                                <span className="text-cyan-500 font-bold">{i+1}.</span>
+                                {obj}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </motion.div>
+                  )}
+                </div>
+
+                {/* Theme Selector */}
+                <div className="space-y-3 pt-2">
+                  <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 block">Aesthetic Card Theme on Feed</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {THEMES.map(t => (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => setSelectedThemeId(t.id)}
+                        className={cn(
+                          "flex items-center gap-2 p-2.5 rounded-xl border transition-all text-left",
+                          selectedThemeId === t.id
+                            ? "border-cyan-500 bg-white/5 shadow-inner"
+                            : "border-white/5 hover:border-white/10 bg-black/30"
+                        )}
+                      >
+                        <div className={cn("w-3.5 h-3.5 rounded-full bg-gradient-to-r shadow-sm", t.color)} />
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-gray-300 line-clamp-1">{t.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Panel: Manuscript Editor & Assets */}
+            <div className="lg:col-span-7 space-y-6">
+              <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 space-y-4 flex flex-col h-full">
+                <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                  <div className="flex items-center gap-2">
+                    <Paperclip size={14} className="text-cyan-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">Research & Supporting Media</h3>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {uploadProgress !== null ? (
+                      <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
+                        <RefreshCcw size={12} className="animate-spin text-cyan-400" />
+                        Uploading ({uploadProgress}%)
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] bg-cyan-500 text-black shadow-[0_0_20px_rgba(6,182,212,0.3)] hover:shadow-[0_0_30px_rgba(6,182,212,0.5)] hover:bg-cyan-400 transition-all active:scale-95 cursor-pointer"
+                      >
+                        <Plus size={16} />
+                        Upload Research
+                      </button>
+                    )}
+                    <input
+                      id="manuscript-upload-input"
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      multiple
+                      accept=".txt,.md,.pdf,.docx,image/*"
+                      className="hidden"
+                    />
+                  </div>
+                </div>
+
+                {/* Research Assets Gallery (Photo Style) */}
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between px-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Research Portfolio</span>
+                      <span className="text-[8px] bg-white/5 text-gray-600 px-2 py-0.5 rounded-full font-bold">{researchAssets.length} / 12 FILES</span>
+                    </div>
+                  </div>
+                  
+                  {researchAssets.length === 0 ? (
+                    <motion.button 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full h-40 rounded-[2rem] border-2 border-dashed border-white/5 bg-black/40 flex flex-col items-center justify-center gap-4 group hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all transition-duration-500"
+                    >
+                      <div className="w-12 h-12 rounded-full bg-cyan-500/5 flex items-center justify-center border border-cyan-500/10 group-hover:bg-cyan-500/10 group-hover:scale-110 transition-all">
+                        <Plus size={24} className="text-cyan-500" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Add Scientific Evidence</p>
+                        <p className="text-[8px] text-gray-600 font-bold uppercase tracking-widest">Images · Documents · Datasets</p>
+                      </div>
+                    </motion.button>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-4 gap-4">
+                      {researchAssets.map((asset, i) => (
+                        <motion.div
+                          key={i}
+                          layout
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          className="aspect-square rounded-[1.5rem] overflow-hidden relative group border border-white/10 bg-black/40 shadow-xl"
+                        >
+                          {asset.type === 'image' ? (
+                            <img src={asset.url} alt={asset.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" referrerPolicy="no-referrer" />
+                          ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center p-3 text-center gap-1.5 bg-cyan-500/5">
+                              <div className="p-2.5 bg-cyan-500/10 rounded-full border border-cyan-500/20 group-hover:scale-110 transition-transform">
+                                <FileText size={20} className="text-cyan-400" />
+                              </div>
+                              <span className="text-[8px] text-gray-500 break-all line-clamp-2 font-mono uppercase tracking-tighter leading-tight px-1 font-bold">{asset.name}</span>
+                            </div>
+                          )}
+                          <button
+                            onClick={() => removeAsset(i)}
+                            className="absolute top-2 right-2 w-7 h-7 bg-black/60 backdrop-blur-md text-white/50 border border-white/10 rounded-xl flex items-center justify-center opacity-0 group-hover:opacity-100 hover:text-red-400 hover:border-red-400/50 transition-all active:scale-90"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                          <div className="absolute bottom-0 inset-x-0 h-1/2 bg-gradient-to-t from-black/80 to-transparent flex items-end p-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex items-center gap-1.5">
+                               <CheckCircle2 size={10} className="text-green-500" />
+                               <span className="text-[8px] font-black text-white uppercase tracking-widest">{asset.type}</span>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ))}
+                      
+                      {researchAssets.length < 12 && (
+                        <button
+                          onClick={() => fileInputRef.current?.click()}
+                          className="aspect-square rounded-[1.5rem] border-2 border-dashed border-white/5 bg-white/5 flex flex-col items-center justify-center gap-2 group hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all"
+                        >
+                          <div className="w-8 h-8 rounded-full border border-white/5 flex items-center justify-center group-hover:border-cyan-500/30 transition-all">
+                             <Plus size={20} className="text-gray-600 group-hover:text-cyan-500 transition-colors" />
+                          </div>
+                          <span className="text-[8px] font-black text-gray-600 uppercase tracking-widest">Attach More</span>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-px bg-white/5 my-2" />
+
+                {/* Drag and Drop Container */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={cn(
+                    "relative flex-1 rounded-2xl border-2 transition-all flex flex-col",
+                    isDragging 
+                      ? "border-cyan-500 bg-cyan-500/5" 
+                      : "border-dashed border-white/5 bg-black/35"
+                  )}
+                >
+                  <textarea
+                    value={manuscript}
+                    onChange={(e) => setManuscript(e.target.value)}
+                    placeholder="Scientific Manuscript Content: Paste or type the full body of your research here. Use Markdown for structuring chapters, methods, and data tables..."
+                    className="w-full flex-1 min-h-[400px] p-6 bg-transparent text-gray-100 placeholder:text-gray-600 border-none outline-none focus:ring-0 text-sm leading-relaxed font-sans resize-y"
+                  />
+
+                  {manuscript.trim() === '' && (
+                    <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center text-center p-8 space-y-3 opacity-30">
+                      <BookOpen className="text-gray-400" size={36} />
+                      <div className="space-y-1">
+                        <p className="text-xs font-bold uppercase tracking-widest text-gray-300">Manuscript Body</p>
+                        <p className="text-[10px] text-gray-500 max-w-sm">Write directly or drag/drop files to attach to this publication.</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-between items-center pt-2">
+                  <p className="text-[10px] text-gray-500 leading-relaxed italic">
+                    Type or paste directly. Formats as standard Markdown in feed.
+                  </p>
+                  
+                  <button
+                    type="button"
+                    disabled={!title && !abstract && !manuscript}
+                    onClick={() => setShowClearConfirm(true)}
+                    className="flex items-center gap-1.5 text-gray-500 hover:text-rose-500 disabled:opacity-35 disabled:hover:text-gray-500 transition-colors text-xs font-bold uppercase tracking-wider"
+                  >
+                    <Trash2 size={12} />
+                    Reset Form
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+      
+      {/* Footer Publishing Center */}
+      <div className="bg-white/5 border border-white/10 rounded-[2rem] p-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+        <div className="space-y-1">
+          <p className="text-xs font-bold text-white uppercase tracking-wider">Submission Quality Check</p>
+          <div className="flex items-center gap-2 text-[11px] text-gray-500">
+            {title.trim() ? <CheckCircle2 size={12} className="text-green-500" /> : <div className="w-3 h-3 rounded-full border border-white/10" />}
+            <span>Title provided</span>
+            <span>•</span>
+            {abstract.trim() ? <CheckCircle2 size={12} className="text-green-500" /> : <div className="w-3 h-3 rounded-full border border-white/10" />}
+            <span>Abstract set</span>
+            <span>•</span>
+            {manuscript.trim() || researchAssets.length > 0 ? <CheckCircle2 size={12} className="text-green-500" /> : <div className="w-3 h-3 rounded-full border border-white/10" />}
+            <span>{researchAssets.length > 0 ? 'Assets attached' : 'Manuscript ready'}</span>
           </div>
         </div>
 
-        <div className="p-6 space-y-6">
-          {/* Manual Input Section */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between px-1">
-               <div className="flex items-center gap-2">
-                 <Edit3 size={12} className="text-cyan-500" />
-                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{labels.notesLabel}</span>
-               </div>
-               <div className="flex items-center gap-2">
-                 <button 
-                  onClick={() => setIsAddingNote(!isAddingNote)}
-                  className={cn(
-                    "p-1 rounded-lg transition-all",
-                    isAddingNote ? "text-cyan-500 rotate-45" : "text-gray-500 hover:text-cyan-500 hover:bg-white/5"
-                  )}
-                 >
-                   <Plus size={18} />
-                 </button>
-                  <button 
-                   onClick={() => fileInputRef.current?.click()}
-                   className="text-gray-500 hover:text-cyan-500 transition-colors p-1 flex items-center gap-1 group/upload relative"
-                   title="Upload Multiple Research Notes"
-                  >
-                    <div className="relative flex items-center justify-center">
-                      <Upload size={18} className="group-hover/upload:scale-110 transition-transform" />
-                      <div className="absolute -top-1.5 -right-1.5 bg-cyan-500 text-black rounded-full p-0.5 shadow-sm">
-                        <Plus size={8} strokeWidth={4} />
-                      </div>
-                    </div>
-                  </button>
-               </div>
+        <div className="w-full sm:w-auto flex flex-col sm:flex-row gap-3">
+          {isPublished ? (
+            <div className="flex flex-col sm:flex-row gap-3">
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="px-8 py-4 bg-green-500/10 border border-green-500/20 text-green-400 rounded-2xl font-bold flex items-center justify-center gap-2 text-xs uppercase tracking-widest"
+              >
+                <Check size={16} />
+                Published to Academic Feed
+              </motion.div>
+              <button
+                onClick={() => {
+                  setIsPublished(false);
+                  setTitle('');
+                  setAbstract('');
+                  setManuscript('');
+                  setResearchAssets([]);
+                  setMainObjective('');
+                  setSpecificObjectives([]);
+                }}
+                className="px-6 py-4 bg-white/5 border border-white/10 text-gray-400 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-white/10 transition-colors active:scale-95"
+              >
+                New Submission
+              </button>
             </div>
-
-            <div className="space-y-3">
-              <AnimatePresence mode="popLayout">
-                {isAddingNote && (
-                  <motion.form 
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    onSubmit={handleAddNote}
-                    className="relative group"
-                  >
-                    <textarea 
-                      autoFocus
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder="Enter a specific research finding, observation, or data point..."
-                      className="w-full min-h-[80px] bg-black/40 border border-cyan-500/30 rounded-2xl p-4 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500/50 transition-all font-light leading-relaxed"
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-                          handleAddNote();
-                        }
-                      }}
-                    />
-                    <div className="absolute bottom-3 right-3 flex items-center gap-2">
-                      <span className="text-[8px] text-gray-600 font-bold uppercase tracking-wider">{labels.shortcutLabel}</span>
-                      <button 
-                        type="submit"
-                        disabled={!newNote.trim()}
-                        className="bg-cyan-500 text-black px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-400 disabled:opacity-50 transition-colors"
-                      >
-                        {labels.addNoteBtn}
-                      </button>
-                    </div>
-                  </motion.form>
-                )}
-
-                {(researchNotes[storageKey] || []).map((note, i) => (
-                  <motion.div 
-                    layout
-                    initial={{ opacity: 0, x: -10 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    key={note + i}
-                    className="relative group bg-white/5 border border-white/10 rounded-2xl p-4 transition-all hover:border-cyan-500/30"
-                  >
-                    <p className="text-sm text-gray-300 font-light leading-relaxed line-clamp-4 italic">
-                      {note.startsWith('[File:') ? (
-                        <span className="flex items-center gap-2 text-cyan-400 font-bold mb-1">
-                          <Upload size={12} /> {note.split('\n')[0]}
-                        </span>
-                      ) : null}
-                      {note.startsWith('[File:') ? note.split('\n').slice(1).join('\n') : note}
-                    </p>
-                    <div className="absolute bottom-2 right-2 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => removeNote(i)}
-                        className="p-1.5 text-gray-600 hover:text-rose-500 transition-colors"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                      <button 
-                        onClick={() => handleGenerate(true)}
-                        className="bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-widest hover:bg-cyan-500 hover:text-black transition-all"
-                      >
-                        {labels.aiSync}
-                      </button>
-                    </div>
-                  </motion.div>
-                ))}
-              </AnimatePresence>
-
-              {(!isAddingNote && (!researchNotes[storageKey] || researchNotes[storageKey].length === 0)) && (
-                <div className="h-40 border-2 border-dashed border-white/5 rounded-3xl flex flex-col items-center justify-center gap-3 text-gray-600 group hover:border-cyan-500/20 transition-all cursor-pointer" onClick={() => setIsAddingNote(true)}>
-                  <Edit3 size={24} className="group-hover:text-cyan-500 opacity-20" />
-                  <p className="text-[10px] uppercase tracking-[0.2em] font-medium italic">{labels.noNotesLabel}</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Subtopics Section */}
-          <div className="space-y-3">
-             <div className="flex items-center justify-between px-1">
-               <div className="flex items-center gap-2">
-                 <ListTree size={12} className="text-rose-500" />
-                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">{labels.subtopicsLabel}</span>
-               </div>
-               <button 
-                onClick={() => setIsAddingSubtopic(!isAddingSubtopic)}
-                className={cn(
-                  "transition-all duration-300",
-                  isAddingSubtopic ? "text-rose-500 rotate-45" : "text-gray-500 hover:text-rose-500"
-                )}
-               >
-                 <Plus size={18} />
-               </button>
-             </div>
-             
-             <div className="flex flex-wrap gap-2">
-                <AnimatePresence mode="popLayout">
-                  {isAddingSubtopic && (
-                       <motion.form 
-                        initial={{ opacity: 0, scale: 0.9 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        exit={{ opacity: 0, scale: 0.9 }}
-                        onSubmit={handleAddSubtopic}
-                        className="flex items-center gap-1 bg-rose-500/10 border border-rose-500/30 rounded-xl px-2 py-1 flex-1 min-w-[200px]"
-                      >
-                        <input 
-                          autoFocus
-                          value={newSubtopic}
-                          onChange={(e) => setNewSubtopic(e.target.value)}
-                          placeholder={labels.subtopicPlaceholder}
-                          className="w-full bg-transparent text-xs text-white placeholder:text-rose-500/40 focus:outline-none"
-                        />
-                        <button type="submit" className="text-rose-500 hover:text-rose-400 p-0.5">
-                          <Plus size={14} />
-                        </button>
-                      </motion.form>
-                  )}
-                  {(subtopics[storageKey] || []).map((topic, i) => (
-                    <motion.div 
-                      layout
-                      initial={{ opacity: 0, x: -10 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={{ opacity: 0, scale: 0 }}
-                      key={topic + i}
-                      className="flex items-center gap-2 bg-white/5 border border-white/10 px-3 py-1.5 rounded-xl text-xs group hover:border-rose-500/30 transition-colors"
-                    >
-                      <span className="text-gray-400 line-clamp-1 max-w-[150px]">{topic}</span>
-                      <button 
-                        type="button"
-                        onClick={() => removeSubtopic(i)}
-                        className="text-gray-600 hover:text-rose-500 transition-colors opacity-0 group-hover:opacity-100"
-                      >
-                        <X size={12} />
-                      </button>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-                {(!isAddingSubtopic && (!subtopics[storageKey] || subtopics[storageKey].length === 0)) && (
-                  <p className="text-[10px] text-gray-600 italic ml-1">{labels.noSubtopicsLabel}</p>
-                )}
-             </div>
-          </div>
-
-          <AnimatePresence mode="wait">
-            {dataset && currentChapterIdx === 4 && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-8 p-6 bg-cyan-500/5 border border-cyan-500/20 rounded-[2rem] space-y-4"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Database size={16} className="text-cyan-500" />
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-white">{labels.datasetTitle}</h4>
-                  </div>
-                  <button 
-                    onClick={() => setDataset(null)}
-                    className="text-gray-500 hover:text-white transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-                
-                <p className="text-[10px] text-gray-400 italic leading-relaxed">{dataset.description}</p>
-                
-                <div className="overflow-x-auto no-scrollbar">
-                  <table className="w-full text-[10px] text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-white/10">
-                        {dataset.headers.map(h => (
-                          <th key={h} className="py-2 px-3 text-cyan-500 font-bold uppercase tracking-tighter whitespace-nowrap">{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dataset.rows.slice(0, 5).map((row, ri) => (
-                        <tr key={ri} className="border-b border-white/5 hover:bg-white/5 transition-colors">
-                          {row.map((val, ci) => (
-                            <td key={ci} className="py-2 px-3 text-gray-400 font-light">{val}</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                
-                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 flex items-center gap-2">
-                    <Sparkles size={10} className="text-rose-500" />
-                    {labels.aiDataSummary}
-                  </p>
-                  <p className="text-[11px] text-gray-300 leading-relaxed italic">{dataset.summaryStatistics}</p>
-                </div>
-              </motion.div>
-            )}
-
-            {currentResult ? (
-              <motion.div
-                key={`${storageKey}-result text`}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="space-y-6 pt-6 border-t border-white/5"
-              >
-                <div className="prose prose-invert max-w-none text-gray-300 leading-relaxed text-sm bg-cyan-500/[0.03] p-6 rounded-[2rem] border border-cyan-500/10">
-                  {currentResult.content}
-                </div>
-                {currentResult.citations.length > 0 && (
-                  <div className="pt-6 border-t border-white/5 px-2">
-                    <h5 className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                      <Globe size={12} className="text-cyan-500" />
-                      {labels.generatedSources} ({style})
-                    </h5>
-                    <ul className="space-y-3">
-                      {currentResult.citations.map((c, i) => (
-                        <li key={i} className="text-[10px] text-cyan-500/70 italic flex items-start gap-3 bg-white/5 p-3 rounded-xl border border-white/5">
-                          <span className="text-rose-500 font-bold">{i + 1}</span> {c}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-              </motion.div>
-            ) : (
-              <motion.div
-                key={`${storageKey}-empty`}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="py-12 flex flex-col items-center justify-center text-center space-y-4 opacity-30"
-              >
-                <BrainCircuit size={48} className="text-cyan-500" />
-                <p className="text-xs max-w-[200px]">{labels.emptyDesc}</p>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {currentChapterIdx === 4 && (
+          ) : (
             <button
-              onClick={handleGenerateDataset}
-              disabled={isGeneratingData || !title}
+              onClick={handlePublish}
+              disabled={isPublishing || !title.trim() || !abstract.trim() || (!manuscript.trim() && researchAssets.length === 0)}
               className={cn(
-                "w-full py-4 mb-4 bg-cyan-500/10 border border-cyan-500/20 text-cyan-500 rounded-2xl flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest hover:bg-cyan-500/20 transition-all",
-                isGeneratingData && "opacity-50"
+                "w-full sm:w-auto px-10 py-4 font-black rounded-2xl flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 text-xs uppercase tracking-widest shadow-xl",
+                (isPublishing || !title.trim() || !abstract.trim() || (!manuscript.trim() && researchAssets.length === 0))
+                  ? "bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed"
+                  : "bg-white text-black hover:bg-gray-100 shadow-white/5"
               )}
             >
-              {isGeneratingData ? (
-                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-                  <span className="text-[8px]">{labels.drafting}</span>
-                </motion.div>
+              {isPublishing ? (
+                <>
+                  <RefreshCcw size={16} className="animate-spin text-cyan-500" />
+                  Uploading Manuscript...
+                </>
               ) : (
                 <>
-                  <Table size={16} />
-                  {labels.generateDataBtn}
+                  <Globe size={16} className="text-cyan-600" />
+                  Publish Research
                 </>
               )}
             </button>
           )}
-
-          {currentSection.includes('Instrument') && (
-            <div className="bg-rose-500/10 border border-rose-500/20 rounded-2xl p-4 mb-2 animate-pulse">
-              <div className="flex items-center gap-2 mb-1">
-                <BrainCircuit size={14} className="text-rose-500" />
-                <p className="text-[10px] text-rose-400 font-bold uppercase tracking-widest">{labels.protocolLabel}</p>
-              </div>
-              <p className="text-[11px] text-gray-400 leading-relaxed">
-                {labels.protocolDesc}
-              </p>
-            </div>
-          )}
-
-          <button
-            onClick={() => handleGenerate(false)}
-            disabled={isLoading || !title}
-            className={cn(
-              "w-full py-5 rounded-2xl flex items-center justify-center gap-2 font-bold transition-all shadow-xl font-inherit",
-              isLoading 
-                ? "bg-gray-800 text-gray-500" 
-                : currentSection.includes('Instrument')
-                  ? "bg-rose-500 text-white hover:bg-rose-600 shadow-rose-500/20"
-                  : "bg-white text-black hover:bg-gray-200"
-            )}
-          >
-            {isLoading ? (
-              <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-                <Sparkles size={18} />
-              </motion.div>
-            ) : (
-              <>
-                <Sparkles size={18} className={currentSection.includes('Instrument') ? "text-white" : "text-rose-500"} />
-                {currentSection.includes('Instrument') 
-                  ? labels.adoptQuestionnaireBtn
-                  : (currentResult ? labels.generateNewBtn : labels.aiGenerationBtn)}
-              </>
-            )}
-          </button>
         </div>
-
-        <div className="bg-zinc-900/80 backdrop-blur-md p-4 border-t border-white/10 flex items-center justify-between">
-          <button 
-            onClick={handleBack}
-            disabled={currentChapterIdx === 0 && currentSectionIdx === 0}
-            className="p-3 text-gray-400 hover:text-white disabled:opacity-20 transition-colors"
-          >
-            <ArrowLeft size={24} />
-          </button>
-          
-          <div className="flex flex-col items-center">
-            <span className="text-[10px] text-gray-500 uppercase font-bold tracking-widest">{labels.sectionLabel} {currentSectionIdx + 1}/{currentChapter.sections.length}</span>
-            <span className="text-[8px] text-cyan-500 font-bold tracking-tighter uppercase mt-1">{labels.documentationLabel}</span>
-          </div>
-
-          <button 
-            onClick={handleNext}
-            disabled={currentChapterIdx === totalChapters - 1 && currentSectionIdx === currentChapter.sections.length - 1}
-            className="p-3 text-cyan-400 hover:text-cyan-300 disabled:opacity-20 transition-colors"
-          >
-            <ArrowRight size={24} />
-          </button>
-        </div>
-      </div>
-
-      <input 
-        type="file" 
-        ref={fileInputRef} 
-        onChange={handleFileUpload}
-        className="hidden" 
-        accept=".txt,.md,.pdf" 
-        multiple
-      />
-
-      <div className="mt-8 flex gap-3 px-2">
-        <button 
-          onClick={handleExport}
-          disabled={isExporting || Object.keys(results).length === 0}
-          className={cn(
-            "flex-[2] py-4 bg-gradient-to-r from-cyan-600 to-blue-600 rounded-2xl font-bold flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-cyan-500/20",
-            (isExporting || Object.keys(results).length === 0) && "opacity-50 grayscale"
-          )}
-        >
-           {isExporting ? (
-             <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
-               <Save size={20} />
-             </motion.div>
-           ) : (
-             <>
-               <Save size={20} />
-               {labels.exportBtn}
-             </>
-           )}
-        </button>
-        <button 
-          onClick={() => setShowClearConfirm(true)}
-          className="flex-1 py-4 bg-white/5 border border-white/10 rounded-2xl font-bold flex items-center justify-center hover:bg-rose-500/10 hover:border-rose-500/30 transition-colors group"
-        >
-          <Trash2 size={20} className="text-gray-500 group-hover:text-rose-500 transition-colors" />
-        </button>
       </div>
     </div>
   );

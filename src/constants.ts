@@ -2,7 +2,8 @@ export const PROSE_GENRES = [
   "Novel", "Novella", "Short story", "Flash fiction", "Historical fiction", 
   "Science fiction", "Fantasy", "Mystery", "Detective fiction", "Thriller", 
   "Horror", "Romance", "Adventure", "Crime fiction", "Satire", "Allegory", 
-  "Realism", "Magical realism", "Bildungsroman", "Epistolary novel", "Gothic fiction"
+  "Realism", "Magical realism", "Bildungsroman", "Epistolary novel", "Gothic fiction",
+  "Autobiography"
 ];
 
 export const DRAMA_GENRES = [
@@ -12,7 +13,8 @@ export const DRAMA_GENRES = [
 
 export const POETRY_GENRES = [
   "Lyric poetry", "Narrative poetry", "Dramatic poetry", "Sonnet", "Ode", 
-  "Elegy", "Ballad", "Epic", "Haiku", "Limerick", "Free verse", "Blank verse"
+  "Elegy", "Ballad", "Epic", "Haiku", "Limerick", "Free verse", "Blank verse",
+  "Praise poetry"
 ];
 
 export const LITERARY_DEVICES = [
@@ -26,7 +28,7 @@ export const LITERARY_DEVICES = [
 export const RESEARCH_STRUCTURE = [
   {
     chapter: "Preliminary Pages",
-    sections: ["Title Page", "Abstract", "Acknowledgements", "Table of Contents", "List of Tables / Figures"]
+    sections: ["Title Page", "Dedication", "Abstract", "Acknowledgements", "Table of Contents", "List of Tables / Figures"]
   },
   {
     chapter: "Chapter 1: Introduction",

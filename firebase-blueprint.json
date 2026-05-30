@@ -11,7 +11,9 @@
         "photoURL": { "type": "string" },
         "language": { "type": "string" },
         "email": { "type": "string", "format": "email" },
-        "createdAt": { "type": "string", "format": "date-time" }
+        "createdAt": { "type": "string", "format": "date-time" },
+        "followersCount": { "type": "integer" },
+        "followingCount": { "type": "integer" }
       },
       "required": ["displayName", "language"]
     },
@@ -25,13 +27,26 @@
         "desc": { "type": "string" },
         "fullWork": { "type": "string" },
         "tags": { "type": "string" },
+        "genre": { "type": "string" },
         "music": { "type": "string" },
         "color": { "type": "string" },
+        "coverImage": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "likesCount": { "type": "integer" },
         "commentsCount": { "type": "integer" }
       },
       "required": ["authorId", "desc", "fullWork", "createdAt"]
+    },
+    "Follow": {
+      "title": "Follow",
+      "description": "User following another user",
+      "type": "object",
+      "properties": {
+        "followerId": { "type": "string" },
+        "followedId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["followerId", "followedId", "createdAt"]
     },
     "Moment": {
       "title": "Gallery Moment",
@@ -58,7 +73,8 @@
         "authorName": { "type": "string" },
         "text": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
-        "parentCommentId": { "type": "string" }
+        "parentCommentId": { "type": "string" },
+        "likesCount": { "type": "integer" }
       },
       "required": ["authorId", "text", "createdAt"]
     },
@@ -90,6 +106,10 @@
     "/posts/{postId}/reactions/{userId}": {
       "schema": "Reaction",
       "description": "User reactions to posts"
+    },
+    "/users/{userId}/following/{targetUserId}": {
+      "schema": "Follow",
+      "description": "Users followed by this user"
     },
     "/moments/{momentId}": {
       "schema": "Moment",

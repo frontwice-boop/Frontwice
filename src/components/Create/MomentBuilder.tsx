@@ -2,17 +2,24 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Camera, Video, Plus, Trash2, Sparkles, Wand2, Music, Play, Check } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { useUser } from '../../context/UserContext';
+import { db } from '../../lib/firebase';
+import { collection, addDoc, serverTimestamp, doc, setDoc } from 'firebase/firestore';
 
 import { useToast } from '../../context/ToastContext';
+import { handleFirestoreError, OperationType } from '../../lib/firestoreErrorHandler';
 
 export default function MomentBuilder() {
   const { showToast } = useToast();
+  const { user, profile } = useUser();
   const [images, setImages] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isCompiling, setIsCompiling] = useState(false);
   const [isCompiled, setIsCompiled] = useState(false);
   const [isMusicSynced, setIsMusicSynced] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isPublished, setIsPublished] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -26,6 +33,8 @@ export default function MomentBuilder() {
         };
         reader.readAsDataURL(file);
       });
+      // Reset input value so selecting the same files again triggers change event
+      e.target.value = '';
     }
   };
 
@@ -49,6 +58,47 @@ export default function MomentBuilder() {
     setIsCompiling(false);
     setIsCompiled(true);
     showToast('Moment compiled and ready!', 'success');
+  };
+
+  const handlePublish = async () => {
+    if (!user) {
+      showToast('You must be logged in to publish.', 'error');
+      return;
+    }
+    
+    setIsPublishing(true);
+    try {
+    const docRef = await addDoc(collection(db, 'posts'), {
+        authorId: user.uid,
+        authorName: profile?.displayName || 'Legacy Builder',
+        desc: caption || 'A beautiful legacy moment.',
+        fullWork: caption || 'A carefully curated moment capturing memories.',
+        tags: '#moment #memory' + (isMusicSynced ? ' #synced' : ''),
+        genre: 'Moment',
+        music: isMusicSynced ? 'Synced AI Soundtrack' : 'Original Audio',
+        likesCount: 1,
+        commentsCount: 0,
+        reactionCounts: { like: 1 },
+        color: 'from-cyan-600 to-blue-600',
+        coverImage: images[0] || null,
+        images: images, // Save all images
+        createdAt: serverTimestamp()
+      });
+
+      // Add the author's own reaction record so they see they've already "Liked" it (auto-like)
+      await setDoc(doc(db, `posts/${docRef.id}/reactions/${user.uid}`), {
+        userId: user.uid,
+        type: 'like',
+        createdAt: serverTimestamp()
+      });
+
+      setIsPublished(true);
+      showToast('Moment published to feed!', 'success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'posts');
+    } finally {
+      setIsPublishing(false);
+    }
   };
 
   return (
@@ -142,17 +192,46 @@ export default function MomentBuilder() {
       </div>
 
       {isCompiled ? (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="w-full py-5 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl font-bold flex flex-col items-center justify-center gap-1 shadow-lg"
-        >
-          <div className="flex items-center gap-2">
-            <Check size={20} />
-            MOMENT COMPILED
-          </div>
-          <span className="text-[10px] uppercase tracking-widest opacity-60">Ready for sharing</span>
-        </motion.div>
+        <div className="space-y-4">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full py-5 bg-green-500/10 border border-green-500/20 text-green-500 rounded-2xl font-bold flex flex-col items-center justify-center gap-1 shadow-lg"
+          >
+            <div className="flex items-center gap-2">
+              <Check size={20} />
+              MOMENT COMPILED
+            </div>
+            <span className="text-[10px] uppercase tracking-widest opacity-60">Ready for sharing</span>
+          </motion.div>
+          {isPublished ? (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="w-full py-4 bg-green-500/10 border border-green-500/20 text-green-500 rounded-xl font-bold text-center flex items-center justify-center gap-2"
+            >
+              <Check size={20} />
+              PUBLISHED TO FEED
+            </motion.div>
+          ) : (
+            <button 
+              onClick={handlePublish}
+              disabled={isPublishing}
+              className={cn(
+                "w-full py-5 bg-white text-black rounded-[2rem] font-bold text-lg flex items-center justify-center gap-3 shadow-2xl hover:scale-[1.02] active:scale-95 transition-all",
+                isPublishing && "opacity-50 grayscale"
+              )}
+            >
+              {isPublishing ? (
+                <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1 }}>
+                  <Sparkles size={20} />
+                </motion.div>
+              ) : (
+                'Publish Moment'
+              )}
+            </button>
+          )}
+        </div>
       ) : (
         <button 
           onClick={handleCompile}
