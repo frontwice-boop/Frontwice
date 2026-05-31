@@ -216,7 +216,7 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
     }
   };
 
-  const handleCharPicUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCharPicImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && activeCharIdx !== null) {
       const reader = new FileReader();
@@ -771,7 +771,7 @@ export default function CreativeSuite({ lang, setLang }: { lang: string; setLang
                 ref={fileInputRef} 
                 className="hidden" 
                 accept="image/*"
-                onChange={handleCharPicUpload}
+                onChange={handleCharPicImport}
               />
 
              {isPublished ? (

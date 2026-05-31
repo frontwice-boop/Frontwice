@@ -58,7 +58,7 @@ export default function Library({ lang }: { lang: string }) {
   const [newWork, setNewWork] = useState({ title: '', authors: '', year: '', dept: '', uni: '' });
   const [selectedYear, setSelectedYear] = useState('All');
   const [selectedInst, setSelectedInst] = useState('All');
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [manuscriptURL, setManuscriptURL] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -300,23 +300,23 @@ export default function Library({ lang }: { lang: string }) {
     if (!file || !user) return;
 
     const storageRef = ref(storage, `manuscripts/${user.uid}/${Date.now()}-${file.name}`);
-    const uploadTask = uploadBytesResumable(storageRef, file);
+    const importTask = uploadBytesResumable(storageRef, file);
 
-    uploadTask.on('state_changed', 
+    importTask.on('state_changed', 
       (snapshot) => {
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        setUploadProgress(progress);
+        setImportProgress(progress);
       }, 
       (error) => {
-        console.error("Upload error:", error);
+        console.error("Import error:", error);
         showToast('Import failed. Check connection.', 'error');
-        setUploadProgress(null);
+        setImportProgress(null);
       }, 
       async () => {
-        const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+        const downloadURL = await getDownloadURL(importTask.snapshot.ref);
         setManuscriptURL(downloadURL);
         // We set to null after a small delay to avoid "stutter"
-        setTimeout(() => setUploadProgress(null), 500);
+        setTimeout(() => setImportProgress(null), 500);
         showToast('File imported successfully.', 'success');
 
         // USE FILENAME IF NO TITLE
@@ -520,11 +520,11 @@ export default function Library({ lang }: { lang: string }) {
                         }
                       }
                     }}
-                    onClick={() => !uploadProgress && fileInputRef.current?.click()}
+                    onClick={() => !importProgress && fileInputRef.current?.click()}
                     className={cn(
                       "h-32 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer bg-black/20 relative overflow-hidden",
                       manuscriptURL ? "border-cyan-500/50 bg-cyan-500/5" : "border-white/5 hover:border-cyan-500/20 text-gray-600",
-                      uploadProgress && "cursor-wait opacity-80"
+                      importProgress && "cursor-wait opacity-80"
                     )}
                   >
                     <input 
@@ -532,14 +532,14 @@ export default function Library({ lang }: { lang: string }) {
                       ref={fileInputRef} 
                       className="hidden" 
                       onChange={handleFileChange}
-                      disabled={uploadProgress !== null}
+                      disabled={importProgress !== null}
                     />
-                    {uploadProgress !== null ? (
+                    {importProgress !== null ? (
                       <div className="flex flex-col items-center gap-2">
                         <motion.div 
                           className="absolute inset-0 bg-cyan-500/10"
                           initial={{ width: 0 }}
-                          animate={{ width: `${uploadProgress}%` }}
+                          animate={{ width: `${importProgress}%` }}
                         />
                         <motion.div
                           animate={{ y: [0, -5, 0] }}
@@ -548,13 +548,13 @@ export default function Library({ lang }: { lang: string }) {
                           <Upload size={24} className="text-cyan-500" />
                         </motion.div>
                         <span className="text-[10px] uppercase tracking-widest font-black text-cyan-500 z-10">
-                          {uploadProgress >= 100 ? 'Finalizing...' : 'Importing...'}
+                          {importProgress >= 100 ? 'Finalizing...' : 'Importing...'}
                         </span>
                       </div>
                     ) : manuscriptURL ? (
                       <div className="flex flex-col items-center gap-2">
                          <BookOpen size={24} className="text-cyan-500" />
-                         <span className="text-[10px] uppercase tracking-widest font-bold text-cyan-500">File Uploaded</span>
+                         <span className="text-[10px] uppercase tracking-widest font-bold text-cyan-500">File Imported</span>
                       </div>
                     ) : (
                       <>

@@ -123,7 +123,7 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
   const contributorInputRef = useRef<{ tributeIndex: number; contributorIndex: number } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: any) => void, mode: 'single' | 'multiple') => {
+  const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>, setter: (val: any) => void, mode: 'single' | 'multiple') => {
     const files = e.target.files;
     if (files) {
       if (mode === 'single') {
@@ -457,7 +457,7 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
             </>
           )}
         </div>
-        <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageUpload(e, setCoverImage, 'single')} />
+        <input type="file" ref={coverInputRef} className="hidden" accept="image/*" onChange={(e) => handleImageImport(e, setCoverImage, 'single')} />
     </section>
 
     <div className="space-y-12">
@@ -593,7 +593,7 @@ export default function BiographyBuilder({ lang, setLang }: { lang: string; setL
           multiple 
           className="hidden" 
           accept="image/*" 
-          onChange={(e) => handleImageUpload(e, setMemorableImages, 'multiple')} 
+          onChange={(e) => handleImageImport(e, setMemorableImages, 'multiple')} 
         />
 
         <div className="bg-rose-500/5 border border-rose-500/10 p-6 rounded-3xl flex items-center gap-4">

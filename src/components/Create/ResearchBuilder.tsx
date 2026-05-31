@@ -72,7 +72,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
     const saved = localStorage.getItem('academic_draft_assets');
     return saved ? JSON.parse(saved) : [];
   });
-  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
 
   useEffect(() => {
     localStorage.setItem('academic_draft_assets', JSON.stringify(researchAssets));
@@ -143,7 +143,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
     setIsDragging(false);
   };
 
-  const uploadFile = async (file: File) => {
+  const importFile = async (file: File) => {
     if (!user) {
       showToast('You must be logged in to import files.', 'error');
       return;
@@ -161,27 +161,27 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
 
     try {
       const storageRef = ref(storage, `research_assets/${user.uid}/${Date.now()}-${file.name}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
+      const importTask = uploadBytesResumable(storageRef, file);
 
-      uploadTask.on('state_changed', 
+      importTask.on('state_changed', 
         (snapshot) => {
           const progress = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 100);
-          setUploadProgress(progress);
+          setImportProgress(progress);
         }, 
         (error) => {
-          console.error("Upload error:", error);
-          showToast('Upload failed.', 'error');
-          setUploadProgress(null);
+          console.error("Import error:", error);
+          showToast('Import failed.', 'error');
+          setImportProgress(null);
         }, 
         async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
+          const downloadURL = await getDownloadURL(importTask.snapshot.ref);
           const newAsset = {
             url: downloadURL,
             name: file.name,
             type: isImage ? 'image' : 'document'
           };
           setResearchAssets(prev => [...prev, newAsset]);
-          setUploadProgress(null);
+          setImportProgress(null);
           showToast(`"${file.name}" attached successfully!`, 'success');
           
           if (!title.trim()) {
@@ -208,11 +208,11 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
       reader.onload = (event) => {
         const content = event.target?.result as string;
         setManuscript(content);
-        uploadFile(file);
+        importFile(file);
       };
       reader.readAsText(file);
     } else {
-      uploadFile(file);
+      importFile(file);
     }
   };
 
@@ -313,7 +313,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
     setAbstract('');
     setManuscript('');
     setResearchAssets([]);
-    setUploadProgress(null);
+    setImportProgress(null);
     localStorage.removeItem('academic_draft_title');
     localStorage.removeItem('academic_draft_abstract');
     localStorage.removeItem('academic_draft_manuscript');
@@ -632,10 +632,10 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                     <h3 className="text-xs font-bold uppercase tracking-widest text-gray-400">Research & Supporting Media</h3>
                   </div>
                   <div className="flex items-center gap-3">
-                    {uploadProgress !== null ? (
+                    {importProgress !== null ? (
                       <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
                         <RefreshCcw size={12} className="animate-spin text-cyan-400" />
-                        Importing ({uploadProgress}%)
+                        Importing ({importProgress}%)
                       </div>
                     ) : (
                       <button

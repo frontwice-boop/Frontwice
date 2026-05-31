@@ -22,7 +22,7 @@ const DEFAULT_LABELS = {
   audiencePlaceholder: 'Historical fiction enthusiasts, students aged 18-35...',
   durationLabel: 'Campaign Duration',
   mediaLabel: 'Promotional Media',
-  mediaHint: 'Upload video or high-res cover art',
+  mediaHint: 'Import video or high-res cover art',
   generateBtn: 'AI Ad Generation',
   launchBtn: 'Launch Campaign',
   launchingBtn: 'Launching Campaign...',
@@ -89,7 +89,7 @@ export default function AdCampaignManager({ lang, setLang }: { lang: string; set
   }, [lang]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files && files.length > 0) {
       Array.from(files).forEach(file => {
@@ -354,7 +354,7 @@ export default function AdCampaignManager({ lang, setLang }: { lang: string; set
                 <Camera size={24} />
                 <Video size={24} />
               </div>
-              <p className="text-[10px] uppercase tracking-widest font-bold">Upload Campaign Media (Pictures/Videos)</p>
+              <p className="text-[10px] uppercase tracking-widest font-bold">Import Campaign Media (Pictures/Videos)</p>
             </div>
           )}
         </div>
@@ -364,7 +364,7 @@ export default function AdCampaignManager({ lang, setLang }: { lang: string; set
           className="hidden"
           accept="image/*,video/*"
           multiple
-          onChange={handleFileUpload}
+          onChange={handleFileImport}
         />
       </div>
 

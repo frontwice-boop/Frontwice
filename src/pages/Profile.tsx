@@ -443,8 +443,8 @@ export default function Profile({
                         if (file) {
                           try {
                             showToast('Importing profile picture...', 'info');
-                            const { uploadProfilePicture } = await import('../services/storageService');
-                            const url = await uploadProfilePicture(file);
+                            const { importProfilePicture } = await import('../services/storageService');
+                            const url = await importProfilePicture(file);
                             // Set url in firestore
                             await setDoc(doc(db, 'users', user!.uid), { photoURL: url }, { merge: true });
                             showToast('Profile picture imported successfully.', 'success');
