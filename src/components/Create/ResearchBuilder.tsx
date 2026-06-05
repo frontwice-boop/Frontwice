@@ -461,7 +461,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                 <div className="pt-2 space-y-3">
                   <div className="flex items-center gap-2 px-1">
                     <Sparkles size={14} className="text-cyan-500" />
-                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500">AI Research Laboratory</h4>
+                    <h4 className="text-[10px] font-black uppercase tracking-widest text-gray-500">Creation Tools</h4>
                   </div>
                   
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -483,14 +483,14 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                           if (data.mainObjective || data.specificObjectives) {
                             setMainObjective(data.mainObjective || '');
                             setSpecificObjectives(data.specificObjectives || []);
-                            showToast('Objectives generated!', 'success');
+                            showToast('Objectives created.', 'success');
                             if (!manuscript.trim() && data.content) setManuscript(data.content);
                           } else {
-                            showToast('Extraction failed.', 'warning');
+                            showToast('Unable to extract data.', 'warning');
                           }
                         } catch (err) {
                           console.error(err);
-                          showToast('AI failed.', 'error');
+                          showToast('Process failed.', 'error');
                         } finally {
                           setIsGeneratingObjectives(false);
                         }
@@ -519,11 +519,11 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                           
                           if (data.content) {
                             setManuscript(prev => prev + (prev ? '\n\n' : '') + data.content);
-                            showToast('Test / Questionnaire generated and appended!', 'success');
+                            showToast('Structure added.', 'success');
                           }
                         } catch (err) {
                           console.error(err);
-                          showToast('AI failed.', 'error');
+                          showToast('Process failed.', 'error');
                         } finally {
                           setIsGeneratingInstrument(false);
                         }
@@ -532,7 +532,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                       className="py-3 bg-purple-500/10 border border-purple-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest text-purple-400 flex flex-col items-center justify-center gap-1 hover:bg-purple-500/20 transition-all active:scale-95 disabled:opacity-50"
                     >
                       {isGeneratingInstrument ? <RefreshCcw size={12} className="animate-spin" /> : <FileText size={12} />}
-                      Test Gen
+                      Methods
                     </button>
 
                     <button
@@ -550,13 +550,13 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                           });
                           
                           if (data) {
-                            const table = `\n\n### Synthetic Research Dataset\n*${data.description}*\n\n| ${data.headers.join(' | ')} |\n| ${data.headers.map(() => '---').join(' | ')} |\n${data.rows.map(row => `| ${row.join(' | ')} |`).join('\n')}\n\n**Summary Statistics:** ${data.summaryStatistics}`;
+                            const table = `\n\n### Research Dataset\n*${data.description}*\n\n| ${data.headers.join(' | ')} |\n| ${data.headers.map(() => '---').join(' | ')} |\n${data.rows.map(row => `| ${row.join(' | ')} |`).join('\n')}\n\n**Summary Statistics:** ${data.summaryStatistics}`;
                             setManuscript(prev => prev + (prev ? '\n\n' : '') + table);
-                            showToast('Synthetic dataset generated and appended!', 'success');
+                            showToast('Dataset ready.', 'success');
                           }
                         } catch (err) {
                           console.error(err);
-                          showToast('AI failed.', 'error');
+                          showToast('Process failed.', 'error');
                         } finally {
                           setIsGeneratingData(false);
                         }
@@ -565,7 +565,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                       className="py-3 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-[9px] font-black uppercase tracking-widest text-emerald-400 flex flex-col items-center justify-center gap-1 hover:bg-emerald-500/20 transition-all active:scale-95 disabled:opacity-50"
                     >
                       {isGeneratingData ? <RefreshCcw size={12} className="animate-spin" /> : <BarChart3 size={12} />}
-                      Simulator
+                      Dataset
                     </button>
                   </div>
                   
@@ -635,7 +635,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
                     {importProgress !== null ? (
                       <div className="flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-xl text-[9px] font-bold text-cyan-400 uppercase tracking-widest">
                         <RefreshCcw size={12} className="animate-spin text-cyan-400" />
-                        Importing ({importProgress}%)
+                        Processing...
                       </div>
                     ) : (
                       <button
@@ -840,7 +840,7 @@ export default function ResearchBuilder({ lang, setLang }: { lang?: string; setL
               {isPublishing ? (
                 <>
                   <RefreshCcw size={16} className="animate-spin text-cyan-500" />
-                  Importing Manuscript...
+                  Publishing...
                 </>
               ) : (
                 <>

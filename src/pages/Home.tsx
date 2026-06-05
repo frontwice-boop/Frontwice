@@ -37,20 +37,20 @@ const DEFAULT_UI = {
   genresLabel: 'Genres',
   selectGenreTitle: 'Select Genre',
   allLabel: 'ALL',
-  filteringLabel: 'Filtering the feed based on choice',
-  translatingLabel: 'AI Translating to',
+  filteringLabel: 'Updating feed...',
+  translatingLabel: 'Translating to',
   commentsTitle: 'Discussion',
   commentPlaceholder: 'Type a comment...',
   sendLabel: 'Send',
   fullWorkTitle: 'Full Work',
   tapToRead: 'Tap to read full work',
-  searchPlaceholder: 'Search by author, title, or year...',
+  searchPlaceholder: 'Search research works...',
   justNow: 'Just now',
   minsAgo: 'm ago',
   hoursAgo: 'h ago',
   daysAgo: 'd ago',
-  noDataTransmission: 'No data in transmission',
-  noMatchingTransmission: 'No matching transmission',
+  noDataTransmission: 'Nothing here yet',
+  noMatchingTransmission: 'No results found',
   unfollowedMsg: 'Unfollowed',
   followingMsg: 'Following',
   followLabel: 'Follow',
@@ -60,7 +60,7 @@ const DEFAULT_UI = {
   noDiscussion: 'No discussion yet',
   likeLabel: 'Like',
   replyLabel: 'Reply',
-  dbError: 'Connection interrupted. Please check your network or retry.'
+  dbError: 'Unable to connect. Please try again later.'
 };
 
 import { useToast } from '../context/ToastContext';

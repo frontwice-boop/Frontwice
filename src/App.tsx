@@ -52,7 +52,7 @@ const VERIFICATION_LABELS = {
   clickToContinue: 'Please click it to continue.',
   confirmBtn: 'Confirmed, I clicked it',
   diffAccount: 'Use a different account',
-  securityStamp: 'Security by Legacy Protocol'
+  securityStamp: 'Secured'
 };
 
 function AnimatedRoutes({ lang, signOut, setLang }: { lang: string; signOut: () => void; setLang: (l: string) => void }) {
@@ -67,7 +67,7 @@ function AnimatedRoutes({ lang, signOut, setLang }: { lang: string; signOut: () 
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -10 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="min-h-screen"
+        className="h-full w-full relative overflow-hidden"
       >
         <Suspense fallback={null}>
           <Routes location={location}>
@@ -143,7 +143,7 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen w-full bg-[#030305] flex items-center justify-center relative overflow-hidden font-sans select-none sm:p-4">
+    <div className="h-screen h-[100dvh] w-full bg-[#030305] flex items-center justify-center relative overflow-hidden font-sans select-none sm:p-4">
       {/* Premium ambient glows */}
       <div className="absolute top-[-15%] left-[-15%] w-[55%] h-[55%] bg-cyan-500/5 rounded-full blur-[140px] pointer-events-none" />
       <div className="absolute bottom-[-15%] right-[-15%] w-[55%] h-[55%] bg-rose-500/5 rounded-full blur-[140px] pointer-events-none" />
@@ -182,7 +182,7 @@ function AppContent() {
                     className="absolute top-0 inset-x-0 z-[100] bg-rose-500 text-white text-xs font-bold uppercase tracking-widest py-1.5 flex flex-row items-center justify-center gap-2"
                   >
                     <WifiOff size={14} />
-                    Offline Mode Active
+                    Connection Lost
                   </motion.div>
                 )}
               </AnimatePresence>

@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Megaphone, Calendar, Users, Sparkles, Send, CheckCircle2, Clock, Globe, Camera, Video, X, Upload, Plus } from 'lucide-react';
-import { cn } from '../../lib/utils';
-import { generateAdCampaign } from '../../services/ai';
-import { generateAdKeywords } from '../../services/geminiService';
+import { cn } from '../lib/utils';
+import { generateAdCampaign } from '../services/ai';
+import { generateAdKeywords } from '../services/geminiService';
 
 const DURATIONS = [
   { value: 7, label: '7 Days', desc: 'Short Burst' },
@@ -12,7 +12,7 @@ const DURATIONS = [
   { value: 90, label: '90 Days', desc: 'Maximum Impact' }
 ];
 
-import { translateUI } from '../../services/translationService';
+import { translateUI } from '../services/translationService';
 
 const DEFAULT_LABELS = {
   langLabel: 'Campaign Language',
@@ -52,10 +52,10 @@ const AD_LANGUAGES = [
   'Azerbaijani', 'Georgian', 'Armenian', 'Pashto', 'Kurdish'
 ];
 
-import { useToast } from '../../context/ToastContext';
-import { handleFirestoreError, OperationType } from '../../lib/firestoreErrorHandler';
-import { useUser } from '../../context/UserContext';
-import { db } from '../../lib/firebase';
+import { useToast } from '../context/ToastContext';
+import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
+import { useUser } from '../context/UserContext';
+import { db } from '../lib/firebase';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
 export default function AdCampaignManager({ lang, setLang }: { lang: string; setLang: (l: string) => void }) {

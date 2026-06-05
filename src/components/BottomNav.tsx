@@ -35,7 +35,7 @@ export default function BottomNav({ lang }: { lang: string }) {
   }, [lang]);
 
   return (
-    <nav className="absolute bottom-0 left-0 right-0 h-16 bg-black/60 backdrop-blur-xl border-t border-white/5 flex items-center justify-around px-2 z-50 transition-all">
+    <nav className="absolute bottom-0 left-0 right-0 h-16 bg-black/60 backdrop-blur-xl border-t border-white/5 flex items-center justify-around px-2 z-50 transition-all max-w-sm sm:max-w-md mx-auto sm:mb-4 sm:rounded-2xl shadow-xl">
       {items.map((item) => (
         <NavLink
           key={item.path}

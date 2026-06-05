@@ -51,15 +51,17 @@ import { collection, query, orderBy, onSnapshot, addDoc, serverTimestamp, setDoc
 import { useUser } from '../context/UserContext';
 import { handleFirestoreError, OperationType } from '../lib/firestoreErrorHandler';
 import { generateMomentCaption, analyzeMomentSentiment } from '../services/geminiService';
+import { importFile } from '../services/storageService';
 
 export default function Moments({ lang }: { lang: string }) {
   const { showToast } = useToast();
   const { user, profile } = useUser();
+  const [isPublishing, setIsPublishing] = useState(new URLSearchParams(window.location.search).get('publish') === 'true');
+  const [isUploading, setIsUploading] = useState(false);
   const [activeTab, setActiveTab] = useState<'video' | 'photo'>('video');
   const [searchYear, setSearchYear] = useState('');
   const [searchLocation, setSearchLocation] = useState('');
   const [searchUser, setSearchUser] = useState('');
-  const [isPublishing, setIsPublishing] = useState(false);
   const [isGeneratingCaption, setIsGeneratingCaption] = useState(false);
   const [momentSentiment, setMomentSentiment] = useState<{ mood: string, explanation: string } | null>(null);
   const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
@@ -72,7 +74,8 @@ export default function Moments({ lang }: { lang: string }) {
   const [newMomentTitle, setNewMomentTitle] = useState('');
   const [newMomentYear, setNewMomentYear] = useState('');
   const [newMomentLocation, setNewMomentLocation] = useState('');
-  const [newMomentFile, setNewMomentFile] = useState<string | null>(null);
+  const [newMomentFile, setNewMomentFile] = useState<File | null>(null);
+  const [previewURL, setPreviewURL] = useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Interaction State
@@ -361,9 +364,10 @@ export default function Moments({ lang }: { lang: string }) {
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      setNewMomentFile(file);
       const reader = new FileReader();
       reader.onload = (event) => {
-        setNewMomentFile(event.target?.result as string);
+        setPreviewURL(event.target?.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -375,7 +379,14 @@ export default function Moments({ lang }: { lang: string }) {
       return;
     }
 
+    setIsUploading(true);
     try {
+      // 1. Upload to Firebase Storage
+      const fileExtension = newMomentFile.name.split('.').pop();
+      const path = `moments/${user.uid}/${Date.now()}_${activeTab}.${fileExtension}`;
+      const downloadURL = await importFile(newMomentFile, path);
+
+      // 2. Save metadata to Firestore
       await addDoc(collection(db, 'posts'), {
         authorId: user.uid,
         authorName: profile?.displayName || 'Legacy Builder',
@@ -385,8 +396,9 @@ export default function Moments({ lang }: { lang: string }) {
         location: newMomentLocation || 'Unknown',
         genre: 'Moment',
         type: activeTab,
-        coverImage: newMomentFile,
-        images: [newMomentFile], // Wrap for consistency with gallery schema
+        coverImage: downloadURL,
+        images: [downloadURL], 
+        mediaURL: downloadURL,
         likesCount: 0,
         commentsCount: 0,
         music: 'AI Original Audio',
@@ -405,10 +417,13 @@ export default function Moments({ lang }: { lang: string }) {
       setNewMomentYear('');
       setNewMomentLocation('');
       setNewMomentFile(null);
+      setPreviewURL(null);
       setIsPublishing(false);
     } catch (error) {
-       handleFirestoreError(error, OperationType.CREATE, 'posts');
+       handleFirestoreError(error, OperationType.CREATE, 'posts (Moments)');
        showToast('An error occurred during transmission.', 'error');
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -561,14 +576,23 @@ export default function Moments({ lang }: { lang: string }) {
                     accept={activeTab === 'video' ? "video/*" : "image/*"} 
                   />
                   
-                  {newMomentFile ? (
+                  {previewURL ? (
                     activeTab === 'video' ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <Video size={40} className="text-rose-500" />
-                        <span className="text-[10px] font-bold text-rose-500">VIDEO READY</span>
+                      <div className="w-full h-full relative">
+                        <video 
+                          src={previewURL} 
+                          className="w-full h-full object-cover" 
+                          muted 
+                          loop 
+                          playsInline 
+                          autoPlay 
+                        />
+                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                          <Play size={32} className="text-white opacity-80" />
+                        </div>
                       </div>
                     ) : (
-                      <img src={newMomentFile} alt="Preview" className="w-full h-full object-cover" />
+                      <img src={previewURL} alt="Preview" className="w-full h-full object-cover" />
                     )
                   ) : (
                     <>
@@ -580,9 +604,20 @@ export default function Moments({ lang }: { lang: string }) {
 
                 <button 
                   onClick={handlePublish}
-                  className="w-full py-4 bg-gradient-to-r from-rose-600 to-purple-600 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform active:scale-95"
+                  disabled={isUploading}
+                  className={cn(
+                    "w-full py-4 bg-gradient-to-r from-rose-600 to-purple-600 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] transition-transform active:scale-95 flex items-center justify-center gap-3",
+                    isUploading && "opacity-70 cursor-not-allowed"
+                  )}
                 >
-                  {ui.publishBtn}
+                  {isUploading ? (
+                    <>
+                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 2, ease: "linear" }}>
+                        <Upload size={18} />
+                      </motion.div>
+                      Uploading to Archive...
+                    </>
+                  ) : ui.publishBtn}
                 </button>
               </div>
             </div>
@@ -670,7 +705,26 @@ export default function Moments({ lang }: { lang: string }) {
               whileHover={{ y: -5 }}
               className="bg-white/5 border border-white/10 rounded-[2rem] overflow-hidden group cursor-pointer shadow-lg relative aspect-[3/4]"
             >
-              <img src={moment.coverImage || moment.images?.[0] || moment.mediaURL || (moment as any).image} alt={moment.title || moment.desc} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+              {moment.type === 'video' ? (
+                <div className="w-full h-full relative">
+                  <video 
+                    src={moment.coverImage || moment.mediaURL} 
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" 
+                    muted 
+                    loop 
+                    playsInline
+                    onMouseEnter={(e) => e.currentTarget.play()}
+                    onMouseLeave={(e) => e.currentTarget.pause()}
+                  />
+                  {!selectedMomentId && (
+                     <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors flex items-center justify-center">
+                        <Play size={24} className="text-white opacity-50 group-hover:opacity-0 transition-opacity" />
+                     </div>
+                  )}
+                </div>
+              ) : (
+                <img src={moment.coverImage || moment.images?.[0] || moment.mediaURL || (moment as any).image} alt={moment.title || moment.desc} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" />
+              )}
               <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-80 group-hover:opacity-100 transition-opacity" />
               
               {/* Media Type Indicator */}

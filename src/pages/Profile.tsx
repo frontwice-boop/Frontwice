@@ -30,22 +30,22 @@ const DEFAULT_LABELS = {
   deactivateAccount: 'Deactivate Account',
   writerAnonymous: 'Writer Anonymous',
   settingsHeader: 'Settings',
-  profileSyncing: 'AI Syncing Profile...',
+  profileSyncing: 'Updating profile...',
   emptyFollowing: 'Empty archive connection.',
   emptyFollowers: 'No incoming broadcasts yet.',
-  identitySecure: 'Identity Secure',
+  identitySecure: 'Secured',
   returnBtn: 'Return',
   followBtn: 'Follow',
   followingActive: 'Following',
   closeArchive: 'Close Archive',
-  uploadingMsg: 'Importing profile picture...',
-  uploadSuccessMsg: 'Profile picture imported successfully.',
+  uploadingMsg: 'Updating photo...',
+  uploadSuccessMsg: 'Photo updated.',
   deactivateConfirmTitle: 'Deactivate?',
   deactivateConfirmDesc: 'Your account and data will be archived for 30 days before permanent deletion.',
   confirmDeactivationBtn: 'Confirm Deactivation',
   cancelBtn: 'Cancel',
   userNotFound: 'User not found',
-  dbError: 'Connection interrupted. Please check your network or retry.'
+  dbError: 'Unable to connect. Please try again later.'
 };
 
 import { useToast } from '../context/ToastContext';
@@ -442,14 +442,14 @@ export default function Profile({
                         const file = e.target.files?.[0];
                         if (file) {
                           try {
-                            showToast('Importing profile picture...', 'info');
+                            showToast('Updating photo...', 'info');
                             const { importProfilePicture } = await import('../services/storageService');
                             const url = await importProfilePicture(file);
                             // Set url in firestore
                             await setDoc(doc(db, 'users', user!.uid), { photoURL: url }, { merge: true });
-                            showToast('Profile picture imported successfully.', 'success');
+                            showToast('Photo updated.', 'success');
                           } catch (err: any) {
-                            showToast('Import failed: ' + err.message, 'error');
+                            showToast('Update failed.', 'error');
                           }
                         }
                       }}

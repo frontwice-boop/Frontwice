@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PenTool, UserCircle, Star, SearchCode, ChevronRight, Sparkles, GraduationCap } from 'lucide-react';
+import { PenTool, UserCircle, Star, SearchCode, ChevronRight, Sparkles, GraduationCap, Video } from 'lucide-react';
 import CreativeSuite from '../components/Create/CreativeSuite';
 import ResearchBuilder from '../components/Create/ResearchBuilder';
 import BiographyBuilder from '../components/Create/BiographyBuilder';
-import AdCampaignManager from '../components/Create/AdCampaignManager';
+import AdCampaignManager from '../components/AdCampaignManager';
 import { cn } from '../lib/utils';
 
 
@@ -21,6 +21,8 @@ const DEFAULT_LABELS = {
   creativeDesc: 'Choose your medium and let your creativity flow.',
   biographyTitle: 'Biography Builder',
   biographyDesc: 'Map your life milestones and weave a legacy narrative.',
+  momentsTitle: 'Moment Gallery',
+  momentsDesc: 'Capture and publish your visual legacy piece.',
   researchTitle: 'Research Publisher',
   researchDesc: 'Write, import, and format your research paper directly, with zero AI involvement.',
   adTitle: 'Ad Campaign Manager',
@@ -33,6 +35,7 @@ const DEFAULT_LABELS = {
   tools: {
     creative: { label: 'Creative Suite', desc: 'Prose, Drama, Poetry, Research' },
     biography: { label: 'Biography Builder', desc: 'Timeline & AI expansion' },
+    moments: { label: 'Moment Gallery', desc: 'Capture & Publish' },
     research: { label: 'Research Publication', desc: 'Direct manuscript submission' },
     ad: { label: 'Ad Campaign', desc: 'Reach more readers' },
     expert: { label: 'Expert Review', desc: 'Professional AI Feedback' }
@@ -42,6 +45,7 @@ const DEFAULT_LABELS = {
 const TOOLS_BASE = [
   { id: 'creative', icon: PenTool },
   { id: 'biography', icon: UserCircle },
+  { id: 'moments', icon: Video, restricted: false },
   { id: 'research', icon: SearchCode },
   { id: 'expert', icon: GraduationCap },
   { id: 'ad', icon: Star, restricted: true },
@@ -49,8 +53,10 @@ const TOOLS_BASE = [
 
 import { generateExpertReview } from '../services/ai';
 import { useToast } from '../context/ToastContext';
+import { useNavigate } from 'react-router-dom';
 
 export default function Create({ lang, user, setLang }: { lang: string; user: any; setLang: (l: string) => void }) {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const [mode, setMode] = useState<CreateMode | null>(null);
   const [labels, setLabels] = useState(DEFAULT_LABELS);
@@ -306,7 +312,13 @@ export default function Create({ lang, user, setLang }: { lang: string; user: an
             key={tool.id}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            onClick={() => setMode(tool.id as CreateMode)}
+            onClick={() => {
+              if (tool.id === 'moments') {
+                navigate('/moments?publish=true');
+              } else {
+                setMode(tool.id as CreateMode);
+              }
+            }}
             className={cn(
               "w-full flex items-center gap-4 bg-white/5 border border-white/10 p-4 rounded-2xl hover:bg-white/10 transition-colors text-left group",
               tool.id === 'ad' && "border-rose-500/30 bg-rose-500/5 shadow-lg shadow-rose-500/5"

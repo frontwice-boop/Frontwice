@@ -1,0 +1,38 @@
+steps:
+  # 1. Pull the previous container image to use as cache source (ignore if doesn't exist)
+  - name: 'gcr.io/cloud-builders/docker'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - 'docker pull gcr.io/$PROJECT_ID/frontwice || true'
+
+  # 2. Build the container image leveraging cached layers
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '--cache-from', 'gcr.io/$PROJECT_ID/frontwice',
+      '-t', 'gcr.io/$PROJECT_ID/frontwice',
+      '.'
+    ]
+
+  # 3. Push the optimized image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/frontwice']
+
+  # 4. Deploy the updated container image to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'frontwice'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/frontwice'
+      - '--region'
+      - 'europe-west1'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/frontwice'

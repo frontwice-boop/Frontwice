@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Filter, Upload, BookOpen, GraduationCap, Calendar, Building, PlusCircle, X, ChevronDown, User, Sparkles, Heart } from 'lucide-react';
+import ResearchBuilder from '../components/Create/ResearchBuilder';
+import { Search, Filter, BookOpen, GraduationCap, Calendar, Building, PlusCircle, X, ChevronDown, User, Sparkles, Heart, Upload } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { translateLibrary, translateUI, hasCache } from '../services/translationService';
@@ -9,19 +10,19 @@ const TRANSLATION_LANGUAGES = LANGUAGES.map(l => l.name);
 
 const DEFAULT_UI = {
   title: 'Research Library',
-  catalogingLabel: 'Processing Import...',
+  catalogingLabel: 'Updating...',
   newEntryLabel: 'New Research Entry',
   placeholderTitle: 'Research Title...',
-  manuscriptLabel: 'Select Manuscript (PDF/DOCX)',
+  manuscriptLabel: 'Select Manuscript',
   researcherLabel: 'RESEARCHER',
   yearLabel: 'YEAR',
   institutionLabel: 'INSTITUTION',
   departmentLabel: 'DEPARTMENT',
   publishBtn: 'Publish Research',
-  searchPlaceholder: 'Search by title, researcher, institution...',
+  searchPlaceholder: 'Search research works...',
   allYears: 'All Years',
   institutionFilter: 'Institution',
-  dbError: 'Database signal disrupted. Please check your connection or retry.'
+  dbError: 'Unable to connect. Please try again later.'
 };
 
 import { useToast } from '../context/ToastContext';
@@ -49,18 +50,16 @@ export default function Library({ lang }: { lang: string }) {
   const { showToast } = useToast();
   const { user, profile } = useUser();
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [newWork, setNewWork] = useState({ title: '', authors: '', year: '', dept: '', uni: '' });
+  const [manuscriptURL, setManuscriptURL] = useState<string | null>(null);
+  const [importProgress, setImportProgress] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isTranslating, setIsTranslating] = useState(false);
   const [works, setWorks] = useState<any[]>([]);
   const [ui, setUi] = useState(DEFAULT_UI);
 
-  // New states for functionality
-  const [newWork, setNewWork] = useState({ title: '', authors: '', year: '', dept: '', uni: '' });
   const [selectedYear, setSelectedYear] = useState('All');
   const [selectedInst, setSelectedInst] = useState('All');
-  const [importProgress, setImportProgress] = useState<number | null>(null);
-  const [manuscriptURL, setManuscriptURL] = useState<string | null>(null);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   // Interaction States
   const [userReactions, setUserReactions] = useState<Record<string, string>>({});
@@ -72,7 +71,7 @@ export default function Library({ lang }: { lang: string }) {
   const [replyTo, setReplyTo] = useState<{ id: string, user: string } | null>(null);
   const [userCommentLikes, setUserCommentLikes] = useState<Set<string>>(new Set());
 
-  // New states for reading works
+  // Restore the reading functionality
   const [isFullWorkOpen, setIsFullWorkOpen] = useState<string | null>(null);
   const [isReading, setIsReading] = useState(false);
 
@@ -308,8 +307,8 @@ export default function Library({ lang }: { lang: string }) {
         setImportProgress(progress);
       }, 
       (error) => {
-        console.error("Import error:", error);
-        showToast('Import failed. Check connection.', 'error');
+        console.error("Upload error:", error);
+        showToast('Upload failed. Please try again.', 'error');
         setImportProgress(null);
       }, 
       async () => {
@@ -317,7 +316,7 @@ export default function Library({ lang }: { lang: string }) {
         setManuscriptURL(downloadURL);
         // We set to null after a small delay to avoid "stutter"
         setTimeout(() => setImportProgress(null), 500);
-        showToast('File imported successfully.', 'success');
+        showToast('File added.', 'success');
 
         // USE FILENAME IF NO TITLE
         if (!newWork.title) {
@@ -459,20 +458,21 @@ export default function Library({ lang }: { lang: string }) {
       </AnimatePresence>
 
       <div className="flex items-center justify-between mb-8 px-2">
-        <h1 className="text-3xl font-serif italic">{ui.title}</h1>
+        <h1 className="text-3xl font-serif italic mb-2 px-2 text-white">{ui.title}</h1>
         <button 
           onClick={() => setIsFormOpen(!isFormOpen)}
           className={cn(
-            "p-2 rounded-full transition-all shadow-lg",
-            isFormOpen ? "bg-white text-black rotate-45" : "bg-cyan-500 text-black hover:scale-110"
+            "p-3 rounded-2xl transition-all shadow-lg flex items-center gap-2",
+            isFormOpen ? "bg-white text-black rotate-45" : "bg-cyan-500 text-black hover:scale-105"
           )}
         >
-          <PlusCircle size={24} />
+          <PlusCircle size={20} />
+          <span className="text-xs font-black uppercase tracking-widest hidden sm:inline">New Entry</span>
         </button>
       </div>
 
       <div className="space-y-8">
-        {/* Simple Sheet Research Form */}
+        {/* Unified Research Form */}
         <AnimatePresence>
           {isFormOpen && (
             <motion.div 
@@ -481,144 +481,7 @@ export default function Library({ lang }: { lang: string }) {
               exit={{ height: 0, opacity: 0, y: -20 }}
               className="overflow-hidden"
             >
-              <div className="bg-white/5 border border-white/10 rounded-[2.5rem] p-6 mb-8 shadow-2xl backdrop-blur-md space-y-5">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-500">
-                      <Upload size={18} />
-                    </div>
-                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                      {ui.newEntryLabel}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="relative group">
-                    <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
-                    </div>
-                    <input 
-                      type="text" 
-                      value={newWork.title}
-                      onChange={(e) => setNewWork(prev => ({ ...prev, title: e.target.value }))}
-                      placeholder={ui.placeholderTitle} 
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-4 pl-6 pr-12 text-sm focus:outline-none focus:ring-1 focus:ring-cyan-500/30 transition-all font-serif italic text-white"
-                    />
-                  </div>
-
-                  <div 
-                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) {
-                        if (file.type === 'application/pdf' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.name.endsWith('.pdf') || file.name.endsWith('.docx')) {
-                          handleFileChange({ target: { files: [file] } } as any);
-                        } else {
-                          showToast('Only PDF or DOCX files are allowed.', 'error');
-                        }
-                      }
-                    }}
-                    onClick={() => !importProgress && fileInputRef.current?.click()}
-                    className={cn(
-                      "h-32 border-2 border-dashed rounded-3xl flex flex-col items-center justify-center gap-2 transition-all cursor-pointer bg-black/20 relative overflow-hidden",
-                      manuscriptURL ? "border-cyan-500/50 bg-cyan-500/5" : "border-white/5 hover:border-cyan-500/20 text-gray-600",
-                      importProgress && "cursor-wait opacity-80"
-                    )}
-                  >
-                    <input 
-                      type="file" 
-                      ref={fileInputRef} 
-                      className="hidden" 
-                      onChange={handleFileChange}
-                      disabled={importProgress !== null}
-                    />
-                    {importProgress !== null ? (
-                      <div className="flex flex-col items-center gap-2">
-                        <motion.div 
-                          className="absolute inset-0 bg-cyan-500/10"
-                          initial={{ width: 0 }}
-                          animate={{ width: `${importProgress}%` }}
-                        />
-                        <motion.div
-                          animate={{ y: [0, -5, 0] }}
-                          transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
-                        >
-                          <Upload size={24} className="text-cyan-500" />
-                        </motion.div>
-                        <span className="text-[10px] uppercase tracking-widest font-black text-cyan-500 z-10">
-                          {importProgress >= 100 ? 'Finalizing...' : 'Importing...'}
-                        </span>
-                      </div>
-                    ) : manuscriptURL ? (
-                      <div className="flex flex-col items-center gap-2">
-                         <BookOpen size={24} className="text-cyan-500" />
-                         <span className="text-[10px] uppercase tracking-widest font-bold text-cyan-500">File Imported</span>
-                      </div>
-                    ) : (
-                      <>
-                        <Upload size={24} className="opacity-20" />
-                        <span className="text-[10px] uppercase tracking-widest font-bold">{ui.manuscriptLabel}</span>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="space-y-3">
-                    <div className="relative">
-                      <User size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
-                      <input 
-                        type="text" 
-                        value={newWork.authors}
-                        onChange={(e) => setNewWork(prev => ({ ...prev, authors: e.target.value }))}
-                        placeholder="Authors (Comma separated)" 
-                        className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:border-cyan-500/30" 
-                      />
-                    </div>
-                  </div>
-
-                  <div className="relative">
-                    <Calendar size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
-                    <input 
-                      type="number" 
-                      value={newWork.year}
-                      onChange={(e) => setNewWork(prev => ({ ...prev, year: e.target.value }))}
-                      placeholder={ui.yearLabel} 
-                      className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:border-cyan-500/30" 
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                     <div className="relative">
-                      <Building size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
-                      <input 
-                        type="text" 
-                        value={newWork.uni}
-                        onChange={(e) => setNewWork(prev => ({ ...prev, uni: e.target.value }))}
-                        placeholder={ui.institutionLabel} 
-                        className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:border-cyan-500/30" 
-                      />
-                    </div>
-                    <div className="relative">
-                      <GraduationCap size={14} className="absolute left-4 top-1/2 -translate-y-1/2 text-cyan-500/50" />
-                      <input 
-                        type="text" 
-                        value={newWork.dept}
-                        onChange={(e) => setNewWork(prev => ({ ...prev, dept: e.target.value }))}
-                        placeholder={ui.departmentLabel} 
-                        className="w-full bg-black/40 border border-white/5 rounded-2xl py-3 pl-11 pr-4 text-[10px] font-bold uppercase tracking-widest focus:outline-none focus:border-cyan-500/30" 
-                      />
-                    </div>
-                  </div>
-
-                  <button 
-                    onClick={handlePublish}
-                    className="w-full py-4 bg-cyan-500 text-black font-bold rounded-2xl text-xs uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all mt-2"
-                  >
-                    Publish Research Work
-                  </button>
-                </div>
-              </div>
+              <ResearchBuilder lang={lang} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -635,9 +498,9 @@ export default function Library({ lang }: { lang: string }) {
               className="w-full bg-white/5 border border-white/10 rounded-2xl pl-12 pr-14 py-4 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transition-all shadow-xl"
             />
             <button 
-              onClick={() => { setIsFormOpen(true); setTimeout(() => fileInputRef.current?.click(), 100); }}
+              onClick={() => { setIsFormOpen(true); }}
               className="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-cyan-500/10 text-cyan-500 rounded-xl hover:bg-cyan-500/20 transition-all active:scale-95 z-10"
-              title="Quick Manuscript Import"
+              title="Open Research Publisher"
             >
               <Upload size={18} />
             </button>

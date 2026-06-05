@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.github
+Dockerfile
+.dockerignore
+firebase-applet-config.json
+firebase-blueprint.json
+firestore.rules
+firebase.json
+package-lock.json
+*.md

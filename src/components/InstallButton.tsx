@@ -47,7 +47,7 @@ export function InstallButton() {
   return (
     <button
       onClick={handleInstall}
-      className="fixed bottom-20 right-4 z-40 flex items-center gap-2 bg-rose-500 text-white px-4 py-3 rounded-full shadow-lg hover:bg-rose-600 transition-all active:scale-90"
+      className="absolute bottom-20 right-4 z-40 flex items-center gap-2 bg-rose-500 text-white px-4 py-3 rounded-full shadow-lg hover:bg-rose-600 transition-all active:scale-90"
     >
       <Download size={18} />
       <span className="text-sm font-bold uppercase tracking-wider">Install App</span>

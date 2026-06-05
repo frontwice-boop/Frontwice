@@ -11,17 +11,27 @@ async function startServer() {
   app.use(compression());
   app.use(express.json());
   
+  // API Helper with robust environment variable fallbacks and helpful configuration instructions
+  const getAi = () => {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.API_KEY || process.env.GOOGLE_GENAI_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        'Gemini API Key is missing. To complete setup, please add the GEMINI_API_KEY secret in the AI Studio Settings menu (Settings > Secrets) or configure the GEMINI_API_KEY environment variable in your Google Cloud Run service variables.'
+      );
+    }
+    return new GoogleGenAI({ 
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        }
+      }
+    });
+  };
+
   app.post('/api/gemini/generateContent', async (req, res) => {
     try {
-      const ai = new GoogleGenAI({ 
-        apiKey: process.env.GEMINI_API_KEY || '',
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-      
+      const ai = getAi();
       const response = await ai.models.generateContent(req.body);
 
       // Safely extract text
@@ -50,15 +60,7 @@ async function startServer() {
 
   app.post('/api/gemini/generateContentStream', async (req, res) => {
     try {
-      const ai = new GoogleGenAI({ 
-        apiKey: process.env.GEMINI_API_KEY || '',
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-      
+      const ai = getAi();
       const stream = await ai.models.generateContentStream(req.body);
 
       res.setHeader('Content-Type', 'text/event-stream');

@@ -54,15 +54,14 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
                           lowerMsg.includes('resource_exhausted');
 
   if (isQuotaExceeded) {
-     const quotaDetail = `Firestore daily quota limit exceeded. Free daily read/write limits have been reached for your project. This free-tier quota resets daily at midnight Pacific Time. Learn more about Spark plan limits at https://firebase.google.com/pricing#cloud-firestore. To upgrade your database or inspect detailed usage metrics, please visit: https://console.firebase.google.com/project/gen-lang-client-0496666046/firestore/databases/ai-studio-259b562f-e18e-4b6c-a9fc-e2016e808a59/data?openUpgradeDialog=true`;
+     const quotaDetail = `Service temporarily unavailable due to high demand. Please try again in a few hours.`;
      const event = new CustomEvent('firestore-quota-exceeded', { detail: quotaDetail });
      window.dispatchEvent(event);
   } else if (lowerMsg.includes('permission') || lowerMsg.includes('missing or insufficient permissions')) {
-     const event = new CustomEvent('firestore-error', { detail: 'Access restricted: Permission denied by database. Please make sure you are logged in.' });
+     const event = new CustomEvent('firestore-error', { detail: 'Please make sure you are logged in to perform this action.' });
      window.dispatchEvent(event);
   } else {
-     // Output the actual underlying error to the UI so we can see what is disrupting the db
-     const event = new CustomEvent('firestore-error', { detail: `Database signal disrupted: ${errorMessage}` });
+     const event = new CustomEvent('firestore-error', { detail: `Unable to complete request. Please try again later.` });
      window.dispatchEvent(event);
   }
 
